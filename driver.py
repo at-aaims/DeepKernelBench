@@ -1,0 +1,50 @@
+from __future__ import annotations
+import argparse, importlib
+from pathlib import Path
+import pandas as pd
+import concurrent.futures as cf
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Iterate through a CSV of parameters and launch benchmarks."
+    )
+    p.add_argument(
+        "--bench-script",
+        default="bench",
+        help="Python module that exposes `run_benchmark(**kwargs)` (default: bench)",
+    )
+    p.add_argument(
+        "--csv-file",
+        type=Path,
+        default=Path("params.csv"),
+        help="CSV describing the sweep grid (default: params.csv)",
+    )
+    p.add_argument(
+        "--max-workers",
+        type=int,
+        default=0,
+        help="Number of parallel processes (0 = run serially, default: 0)",
+    )
+    return p.parse_args()
+
+def main() -> None:
+    args = parse_args()
+    bench = importlib.import_module(args.bench_script)
+    df = pd.read_csv(args.csv_file)
+
+    def _call(row):
+        idx, params = row
+        print(f"[{idx}] running with {params}")
+        metrics = bench.run_benchmark(**params)
+        return idx, metrics
+
+    iterable = df.to_dict(orient="index").items()
+    if args.max_workers:
+        with cf.ProcessPoolExecutor(args.max_workers) as pool:
+            results = dict(pool.map(_call, iterable))
+    else:
+        results = dict(map(_call, iterable))
+
+if __name__ == "__main__":
+    main()
+
