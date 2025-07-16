@@ -1,0 +1,144 @@
+import os
+import torch
+import torch.nn.functional as F
+import argparse
+
+
+def get_flops(ngpus, m, k, n):
+    return ngpus * 2 * m * k * n
+
+def run_benchmark(m, k, n, f=F.linear, warmup_iter=1, num_iter=10, 
+                  forward_only=True, log=True, profile=False):
+    dtype = torch.bfloat16
+    device = torch.device(f"cuda:0")
+    torch.cuda.set_device(device)
+
+    assert m > 0
+    assert k > 0
+    assert n > 0
+
+    forward_flops = get_flops(1, m, k, n)
+    a = torch.randn(
+        m,
+        k,
+        device=device,
+        dtype=dtype,
+        requires_grad=True,
+    )
+    b = torch.randn(
+        n,
+        k,
+        device=device,
+        dtype=dtype,
+        requires_grad=True,
+    )
+ 
+    dout = torch.randn(
+        m, n, device=device, dtype=dtype
+    )
+
+    if profile:
+        torch.backends.cudnn.benchmark = True
+        profiler = torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=torch.profiler.schedule(
+                wait=2,
+                warmup=3,
+                active=5,
+            ),
+            record_shapes=True,
+            profile_memory=True,
+            with_flops=True,
+            with_modules=True,
+            with_stack=False,
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                os.path.join(
+                    f"./benchmark/logs/{f.__name__}", f"rank_{dist.get_rank()}"
+                )
+            ),
+        )
+
+
+    for _ in range(warmup_iter):
+        a.grad = None
+        b.grad = None
+        out = f(
+            a,
+            b,
+        )
+        out.backward(dout)
+
+
+    if profile:
+        profiler.start()
+
+    begin = torch.cuda.Event(enable_timing=True)
+    begin.record()
+
+    if forward_only:
+        with torch.no_grad():
+            for _ in range(num_iter):
+                _ = f(
+                    a,
+                    b
+                )
+                if profile:
+                    profiler.step()
+
+    else:
+        for _ in range(num_iter):
+            a.grad = None
+            b.grad = None
+            out = f(
+                a,
+                b,
+            )
+            out.backward(dout)
+            if profile:
+                profiler.step()
+
+    end = torch.cuda.Event(enable_timing=True)
+    end.record()
+    torch.cuda.synchronize(device=device)
+    time = begin.elapsed_time(end) / 1000.0
+    if forward_only:
+        TFLOPS = forward_flops/(time/num_iter)/1e12 
+    else:
+        TFLOPS = 3*forward_flops/(time/num_iter)/1e12 
+
+    if profile:
+        profiler.stop()
+
+    print(f"{num_iter / time:.6f} iter/s, {time:.3f} sec, {TFLOPS:.1f} TFLOPS")
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Parse GEMM configuration arguments.")
+
+    parser.add_argument("--m", type=int, default=1024, help="Number of rows in Matrix A.")
+    parser.add_argument("--k", type=int, default=1024, help="Number of columns in Matrix A.")
+    parser.add_argument("--n", type=int, default=1024, help="Number of columns in Matrix B.")
+    parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
+    parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
+    parser.add_argument("--profile", action='store_true', help="Enable profiling.")
+    args = parser.parse_args()
+
+    m = args.m
+    k = args.k
+    n = args.n
+    forward_only = args.forward_only
+    profile = args.profile
+    num_iter = args.num_iter
+
+    for f in [
+        F.linear,
+    ]:
+        torch.cuda.empty_cache()
+        #if rank == 0:
+        #    print(f"# {f.__name__}")
+        run_benchmark(
+           m, k, n, f, forward_only=forward_only, num_iter=num_iter, log=True, profile=profile
+        )
