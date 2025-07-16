@@ -1,0 +1,16 @@
+#--------------------------------------------------------------
+# Reference
+# The Case for Co-Designing Model Architectures with Hardware
+# https://dl.acm.org/doi/pdf/10.1145/3673038.3673136
+#
+# (b*a/t, s, h/a) (b*a/t, h/a, s)
+# (b*a/t, s, s) (b*a/t, s, h/a)
+#
+# Forge-L
+# b=16, s=2048, h=6144, a=48, t=2, v=52000 
+#--------------------------------------------------------------
+batch_size,m,k,n
+384, 2048, 128, 2048
+384, 2048, 2048, 128
+
+
