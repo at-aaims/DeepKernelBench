@@ -6,9 +6,10 @@ def get_flops(ngpus, batch_size, m, k, n):
     return ngpus * batch_size * 2 * m * k * n
 
 # https://docs.pytorch.org/docs/stable/generated/torch.bmm.html#torch.bmm
-def run_benchmark(batch_size, m, k, n, f=torch.bmm, warmup_iter=1, num_iter=10, 
+def run_benchmark(batch_size, m, k, n, a_type='bfloat16',
+                  b_type='bfloat16', o_type='bfloat16',
+                  f=torch.bmm, warmup_iter=1, num_iter=10, 
                   forward_only=True, log=True, profile=False):
-    dtype = torch.bfloat16
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
 
@@ -17,13 +18,19 @@ def run_benchmark(batch_size, m, k, n, f=torch.bmm, warmup_iter=1, num_iter=10,
     assert k > 0
     assert n > 0
 
+    torch_dtypes = {
+        'bfloat16': torch.bfloat16,
+        'float16' : torch.float16,
+        'float32' : torch.float32,
+    }
+
     forward_flops = get_flops(1, batch_size, m, k, n)
     a = torch.randn(
         batch_size,
         m,
         k,
         device=device,
-        dtype=dtype,
+        dtype=torch_dtypes[a_type.strip()],
         requires_grad=True,
     )
 
@@ -32,12 +39,12 @@ def run_benchmark(batch_size, m, k, n, f=torch.bmm, warmup_iter=1, num_iter=10,
         k,
         n,
         device=device,
-        dtype=dtype,
+        dtype=torch_dtypes[b_type.strip()],
         requires_grad=True,
     )
  
     dout = torch.randn(
-        batch_size, m, n, device=device, dtype=dtype
+        batch_size, m, n, device=device, dtype=torch_dtypes[o_type.strip()]
     )
 
     if profile:
@@ -119,12 +126,15 @@ def run_benchmark(batch_size, m, k, n, f=torch.bmm, warmup_iter=1, num_iter=10,
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="Parse model configuration arguments.")
+    parser = argparse.ArgumentParser(description="Parse batched GEMM configuration arguments.")
 
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training or inference.")
     parser.add_argument("--m", type=int, default=1024, help="Number of rows of Matrix A.")
     parser.add_argument("--k", type=int, default=1024, help="Number of columns of Matrix A.")
     parser.add_argument("--n", type=int, default=1024, help="Number of columns of Matrix B.")
+    parser.add_argument("--a_type", type=str, default='bfloat16', help="Precision of Matrix A.")
+    parser.add_argument("--b_type", type=str, default='bfloat16', help="Precision of Matrix B.")
+    parser.add_argument("--o_type", type=str, default='bfloat16', help="Precision of Matrix O.")
     parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
@@ -134,6 +144,9 @@ if __name__ == "__main__":
     m = args.m
     k = args.k
     n = args.n
+    a_type = args.a_type
+    b_type = args.b_type
+    o_type = args.o_type
     forward_only = args.forward_only
     profile = args.profile
     num_iter = args.num_iter
@@ -145,5 +158,6 @@ if __name__ == "__main__":
         #if rank == 0:
         #    print(f"# {f.__name__}")
         run_benchmark(
-           batch_size, m, k, n, f, forward_only=forward_only, num_iter=num_iter, log=True, profile=profile
+           batch_size, m, k, n, a_type, b_type, o_type, f,
+           forward_only=forward_only, num_iter=num_iter, log=True, profile=profile
         )
