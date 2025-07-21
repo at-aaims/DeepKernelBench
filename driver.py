@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     bench = importlib.import_module(args.bench_script)
-    df = pd.read_csv(args.csv_file)
+    df = pd.read_csv(args.csv_file, comment='#')
 
     def _call(row):
         idx, params = row
