@@ -7,9 +7,9 @@ import argparse
 def get_flops(ngpus, m, k, n):
     return ngpus * 2 * m * k * n
 
-def run_benchmark(m, k, n, a_type='bfloat16', 
+def run_benchmark(m, k, n, a_type='bfloat16',
                   b_type='bfloat16', o_type='bfloat16',
-                  f=F.linear, warmup_iter=1, num_iter=10, 
+                  f=F.linear, warmup_iter=10, num_iter=100,
                   forward_only=True, log=True, profile=False):
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)

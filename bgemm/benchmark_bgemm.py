@@ -8,7 +8,7 @@ def get_flops(ngpus, batch_size, m, k, n):
 # https://docs.pytorch.org/docs/stable/generated/torch.bmm.html#torch.bmm
 def run_benchmark(batch_size, m, k, n, a_type='bfloat16',
                   b_type='bfloat16', o_type='bfloat16',
-                  f=torch.bmm, warmup_iter=1, num_iter=10, 
+                  f=torch.bmm, warmup_iter=10, num_iter=100,
                   forward_only=True, log=True, profile=False):
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
