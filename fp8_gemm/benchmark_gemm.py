@@ -46,9 +46,16 @@ def run_benchmark(m, k, n, a_type='float8_e4m3fn',
     assert k > 0
     assert n > 0
 
+    if torch.version.hip and 'gfx94' in torch.cuda.get_device_properties(0).gcnArchName:
+        e4m3_type = torch.float8_e4m3fnuz
+        e5m2_type = torch.float8_e5m2fnuz
+    else:
+        e4m3_type = torch.float8_e4m3fn
+        e5m2_type = torch.float8_e5m2
+
     torch_dtypes = {
-        'float8_e4m3fn': torch.float8_e4m3fn,
-        'float8_e5m2': torch.float8_e5m2,
+        'float8_e4m3': e4m3_type,
+        'float8_e5m2': e5m2_type,
         'bfloat16': torch.bfloat16,
         'float16' : torch.float16,
         'float32' : torch.float32,
@@ -116,11 +123,9 @@ def run_benchmark(m, k, n, a_type='float8_e4m3fn',
         )
         # RuntimeError: derivative for aten::_scaled_mm is not implemented
         # out.backward(dout)
-
-        cos_sim = F.cosine_similarity(torch.mm(a, b.t()).reshape(-1),
-                                      out.reshape(-1), dim=0)
-        # Cosine similarity between scaled mm and reference ideally close to 1.0
-        print(f'cos_sim {cos_sim.item():.4f}')
+    cos_sim = F.cosine_similarity(torch.mm(a, b.t()).reshape(-1), out.reshape(-1), dim=0)
+    # Cosine similarity between scaled mm and reference ideally close to 1.0
+    print(f'cos_sim {cos_sim.item():.4f}')
 
 
     if profile:

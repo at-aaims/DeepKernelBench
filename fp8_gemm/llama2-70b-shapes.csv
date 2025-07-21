@@ -8,11 +8,11 @@
 # m = batch_size * seq_len = 16384
 #--------------------------------------------------------------
 m,k,n,a_type,b_type,o_type,fast_accum
-16384, 8192, 1280, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-16384, 8192, 1280, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
-16384, 1024, 8192, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-16384, 1024, 8192, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
-16384, 8192, 7168, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-16384, 8192, 7168, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
-16384, 3584, 8192, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-16384, 3584, 8192, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
+16384, 8192, 1280, float8_e4m3, float8_e4m3, bfloat16, 0
+16384, 8192, 1280, float8_e4m3, float8_e4m3, bfloat16, 1
+16384, 1024, 8192, float8_e4m3, float8_e4m3, bfloat16, 0
+16384, 1024, 8192, float8_e4m3, float8_e4m3, bfloat16, 1
+16384, 8192, 7168, float8_e4m3, float8_e4m3, bfloat16, 0
+16384, 8192, 7168, float8_e4m3, float8_e4m3, bfloat16, 1
+16384, 3584, 8192, float8_e4m3, float8_e4m3, bfloat16, 0
+16384, 3584, 8192, float8_e4m3, float8_e4m3, bfloat16, 1

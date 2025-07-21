@@ -15,13 +15,13 @@
 # b=16, s=2048, h=6144, a=48, t=2, v=52000 
 #--------------------------------------------------------------
 m,k,n,a_type,b_type,o_type,fast_accum
-32768, 6144, 9216, float8_e4m3fn, float8_e4m3fn, bfloat16, 0 
-32768, 6144, 9216, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
-32768, 3072, 6144, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-32768, 3072, 6144, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
-32768, 6144, 12288, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-32768, 6144, 12288, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
-32768, 12288, 6144, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-32768, 12288, 6144, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
-32768, 52000, 6144, float8_e4m3fn, float8_e4m3fn, bfloat16, 0
-32768, 52000, 6144, float8_e4m3fn, float8_e4m3fn, bfloat16, 1
+32768, 6144, 9216, float8_e4m3, float8_e4m3, bfloat16, 0 
+32768, 6144, 9216, float8_e4m3, float8_e4m3, bfloat16, 1
+32768, 3072, 6144, float8_e4m3, float8_e4m3, bfloat16, 0
+32768, 3072, 6144, float8_e4m3, float8_e4m3, bfloat16, 1
+32768, 6144, 12288, float8_e4m3, float8_e4m3, bfloat16, 0
+32768, 6144, 12288, float8_e4m3, float8_e4m3, bfloat16, 1
+32768, 12288, 6144, float8_e4m3, float8_e4m3, bfloat16, 0
+32768, 12288, 6144, float8_e4m3, float8_e4m3, bfloat16, 1
+32768, 52000, 6144, float8_e4m3, float8_e4m3, bfloat16, 0
+32768, 52000, 6144, float8_e4m3, float8_e4m3, bfloat16, 1
