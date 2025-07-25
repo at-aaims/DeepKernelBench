@@ -15,3 +15,6 @@
 ## Benchmark batched GEMM operations
 `python driver.py --bench-script bgemm.benchmark_bgemm --csv-file bgemm/shapes.csv`
 
+## Integer GEMM operations
+`cd int8_gemm`
+`python intmm.py --file_path intmm_shapes.csv`
