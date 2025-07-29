@@ -8,8 +8,9 @@ def get_flops(ngpus, batch_size, m, k, n):
 # https://docs.pytorch.org/docs/stable/generated/torch.bmm.html#torch.bmm
 def run_benchmark(batch_size, m, k, n, a_type='bfloat16',
                   b_type='bfloat16', o_type='bfloat16',
-                  f=torch.bmm, warmup_iter=10, num_iter=100,
-                  forward_only=True, log=True, profile=False):
+                  forward_only=True, f=torch.bmm,
+                  warmup_iter=30, num_iter=200,
+                  log=True, profile=False):
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
 
@@ -81,6 +82,7 @@ def run_benchmark(batch_size, m, k, n, a_type='bfloat16',
         )
         out.backward(dout)
 
+    torch.cuda.synchronize(device=device)
 
     if profile:
         profiler.start()
@@ -158,6 +160,6 @@ if __name__ == "__main__":
         #if rank == 0:
         #    print(f"# {f.__name__}")
         run_benchmark(
-           batch_size, m, k, n, a_type, b_type, o_type, f,
-           forward_only=forward_only, num_iter=num_iter, log=True, profile=profile
+           batch_size, m, k, n, a_type, b_type, o_type, forward_only,
+           f, num_iter=num_iter, log=True, profile=profile
         )
