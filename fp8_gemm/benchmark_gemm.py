@@ -32,7 +32,7 @@ def scaled_mm_supported_device():
 def run_benchmark(m, k, n, a_type='float8_e4m3fn',
                   b_type='float8_e4m3fn', o_type='bfloat16',
                   fast_accum=False, f=torch._scaled_mm,
-                  warmup_iter=10, num_iter=100,
+                  warmup_iter=30, num_iter=200,
                   forward_only=True, log=True, profile=False):
 
     if not scaled_mm_supported_device():
@@ -127,6 +127,7 @@ def run_benchmark(m, k, n, a_type='float8_e4m3fn',
     # Cosine similarity between scaled mm and reference ideally close to 1.0
     print(f'cos_sim {cos_sim.item():.4f}')
 
+    torch.cuda.synchronize(device=device)
 
     if profile:
         profiler.start()
