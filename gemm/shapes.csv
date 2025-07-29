@@ -14,10 +14,14 @@
 # Forge-L
 # b=16, s=2048, h=6144, a=48, t=2, v=52000 
 #--------------------------------------------------------------
-m,k,n,a_type,b_type,o_type
-32768, 6144, 9216, bfloat16, bfloat16, bfloat16
-32768, 3072, 6144, bfloat16, bfloat16, bfloat16
-32768, 6144, 12288, bfloat16, bfloat16, bfloat16
-32768, 12288, 6144, bfloat16, bfloat16, bfloat16
-32768, 52000, 6144, bfloat16, bfloat16, bfloat16
-
+m,k,n,a_type,b_type,o_type,forward_only
+32768, 6144, 9216, bfloat16, bfloat16, bfloat16, 0
+32768, 3072, 6144, bfloat16, bfloat16, bfloat16, 0
+32768, 6144, 12288, bfloat16, bfloat16, bfloat16, 0
+32768, 12288, 6144, bfloat16, bfloat16, bfloat16, 0
+32768, 52000, 6144, bfloat16, bfloat16, bfloat16, 0
+32768, 6144, 9216, bfloat16, bfloat16, bfloat16, 1
+32768, 3072, 6144, bfloat16, bfloat16, bfloat16, 1
+32768, 6144, 12288, bfloat16, bfloat16, bfloat16, 1
+32768, 12288, 6144, bfloat16, bfloat16, bfloat16, 1
+32768, 52000, 6144, bfloat16, bfloat16, bfloat16, 1
