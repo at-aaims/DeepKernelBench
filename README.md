@@ -18,3 +18,8 @@
 ## Integer GEMM operations
 `cd int8_gemm`
 `python intmm.py --file_path intmm_shapes.csv`
+
+## Reproduce results published by https://semianalysis.com/
+`cd semianalysiswork`
+`python matmul.py`
+
