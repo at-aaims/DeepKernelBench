@@ -25,6 +25,8 @@ from torchao.float8.config import (
 )
 from torchao.float8.float8_linear import Float8Linear
 
+from utils import get_name_to_shapes_iter
+
 # not a user-facing Config in torchao
 class ScaledMMConfig(NamedTuple):
     """
@@ -79,102 +81,6 @@ gpu_name_to_specs = {
         "fp8_peak_tops": 1961e12,
     },
 }
-
-def get_name_to_shapes_iter(
-    shape_gen_name: str,
-    M: Optional[int],
-    K: Optional[int],
-    N: Optional[int],
-):
-    if shape_gen_name == "llama":
-        assert M == K == N == None, (
-            f"M, K, N arguments not supported for shape_gen_name {shape_gen_name}"
-        )
-        bsz, seq_len = 4, 4096
-        M = bsz * seq_len
-        # LLaMa 2 70B single-node weight shapes
-        # assumes fused attn.wqkv and ffn.w13
-        # source: https://fburl.com/gsheet/g8onr7rh
-        name_to_shapes_70b = {
-            "attn.wqkv": (M, 8192, 1280),
-            "attn.w0": (M, 1024, 8192),
-            "ffn.w13": (M, 8192, 7168),
-            "ffn.w2": (M, 3584, 8192),
-        }
-        return name_to_shapes_70b.items()
-
-    elif shape_gen_name == "forgeL":
-        assert M == K == N == None, (
-            f"M, K, N arguments not supported for shape_gen_name {shape_gen_name}"
-        )
-        bsz, seq_len = 16, 2048
-        M = bsz * seq_len
-        h, t, v = 6144, 2, 52000
-        
-        name_to_shapes = {
-            "QKV_transform": (M, h, 3 * h // t),
-            "Linear_project": (M, h//t, h),
-            "MLP1": (M, h, 4 * h // t),
-            "MLP2": (M, 4 * h // t, h),
-            "Linear_output": (M, v, h),
-        }
-        return name_to_shapes.items()
-
-    elif shape_gen_name == "pow2":
-        assert M == K == N == None, (
-            f"M, K, N arguments not supported for shape_gen_name {shape_gen_name}"
-        )
-        name_to_shapes = {}
-        min_power_of_2 = 10  # 1024
-        max_power_of_2 = 14  # 16,384
-        for idx, power_of_2 in enumerate(range(min_power_of_2, max_power_of_2 + 1)):
-            val = 2**power_of_2
-            name_to_shapes[idx] = val, val, val
-        return name_to_shapes.items()
-
-    elif shape_gen_name == "pow2_extended":
-        assert M == K == N == None, (
-            f"M, K, N arguments not supported for shape_gen_name {shape_gen_name}"
-        )
-        name_to_shapes = {}
-        min_power_of_2 = 10  # 1024
-        max_power_of_2 = 14  # 16,384
-        for idx, power_of_2 in enumerate(range(min_power_of_2, max_power_of_2 + 1)):
-            val1 = 2**power_of_2
-            name_to_shapes[idx * 2] = val1, val1, val1
-            val2 = 2**power_of_2 + 2 ** (power_of_2 - 1)
-            name_to_shapes[idx * 2 + 1] = val2, val2, val2
-        return name_to_shapes.items()
-
-    elif shape_gen_name == "sweep":
-        assert M == K == N == None, (
-            f"M, K, N arguments not supported for shape_gen_name {shape_gen_name}"
-        )
-        name_to_shapes = {}
-        min_p2 = 8  # 256
-        max_p2 = 15  # 32,768
-        counter = 0
-        for M_p2 in range(min_p2, max_p2 + 1):
-            M = 2**M_p2
-            for K_p2 in range(min_p2, max_p2 + 1):
-                K = 2**K_p2
-                for N_p2 in range(min_p2, max_p2 + 1):
-                    N = 2**N_p2
-                    name_to_shapes[counter] = M, K, N
-                    counter += 1
-        return name_to_shapes.items()
-
-    elif shape_gen_name == "custom":
-        assert M is not None and K is not None and N is not None, (
-            "M, K, N must be specified for custom shape_gen"
-        )
-        name_to_shapes = {
-            1: (M, K, N),
-        }
-        return name_to_shapes.items()
-
-    raise AssertionError(f"unknown shape_gen_name {shape_gen_name}")
-
 
 gpu_name = torch.cuda.get_device_name(0)
 print(f"GPU name: {gpu_name}")
