@@ -23,3 +23,11 @@
 `cd semianalysiswork`
 `python matmul.py`
 
+## benchmark forward/backward of `Linear` and `Float8Linear` on LLaMa 2 70B shapes
+`cd ao_float8`
+`python bench_linear_float8.py -o linear_float8_llama70.txt --shape_gen_name llama`
+
+## benchmark forward/backward of `Linear` and `Float8Linear` on ForgeL shapes
+`cd ao_float8`
+`python bench_linear_float8.py -o linear_float8_forgeL.txt --shape_gen_name forgeL`
+
