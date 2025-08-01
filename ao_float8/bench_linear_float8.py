@@ -25,7 +25,10 @@ from torchao.float8.config import (
 )
 from torchao.float8.float8_linear import Float8Linear
 
-from utils import get_name_to_shapes_iter
+from utils import (
+    get_name_to_shapes_iter,
+    get_peak_tops_from_spec
+)
 
 # not a user-facing Config in torchao
 class ScaledMMConfig(NamedTuple):
@@ -48,14 +51,34 @@ class ScaledMMConfig(NamedTuple):
 # estimating TOPs for matmuls in fp32, fp16, fp8
 # assuming A * B = C, with A being M * K, B being K * N, C being M * N
 
+gpu_name = torch.cuda.get_device_name(0)
+print(f"GPU name: {gpu_name}")
+
+dtype_to_peak_tops = get_peak_tops_from_spec(gpu_name)
+
+'''
 gpu_name_to_specs = {
+    "NVIDIA H200": {
+        "fp32_peak_tops": 67e12,
+        "fp16_peak_tops": 989e12,
+        "bf16_peak_tops": 989e12,
+        "int8_peak_tops": 1979e12,
+        "fp8_peak_tops": 1979e12,
+    },
+    "NVIDIA H200 NVL": {
+        "fp32_peak_tops": 60e12,
+        "fp16_peak_tops": 835e12,
+        "bf16_peak_tops": 835e12,
+        "int8_peak_tops": 1670e12,
+        "fp8_peak_tops": 1670e12,
+    },
     "NVIDIA H100": {
         # https://www.nvidia.com/en-us/data-center/h100/, divide by 2 because no sparsity
          # H100 SXM specs: bottom of https://www.nvidia.com/en-us/data-center/h100/
         "fp32_peak_tops": 67e12,
         "fp16_peak_tops": 989e12,
         "bf16_peak_tops": 989e12,
-        "int8_peak_tops": 2614e12,
+        "int8_peak_tops": 1979e12,
         "fp8_peak_tops": 1979e12,
     },
     "NVIDIA H100 NVL": {
@@ -81,20 +104,9 @@ gpu_name_to_specs = {
         "fp8_peak_tops": 1961e12,
     },
 }
+'''
 
-gpu_name = torch.cuda.get_device_name(0)
-print(f"GPU name: {gpu_name}")
 
-spec = gpu_name_to_specs[gpu_name]
-
-dtype_to_peak_tops = {
-    torch.float32:       spec["fp32_peak_tops"],
-    torch.float16:       spec["bf16_peak_tops"],
-    torch.bfloat16:      spec["bf16_peak_tops"],
-    torch.int8:          spec["int8_peak_tops"],
-    torch.float8_e4m3fn: spec["fp8_peak_tops"],
-    torch.float8_e5m2:   spec["fp8_peak_tops"],
-}
 
 # prevent splitting columns when printing a data frame
 pd.set_option("display.expand_frame_repr", False)
