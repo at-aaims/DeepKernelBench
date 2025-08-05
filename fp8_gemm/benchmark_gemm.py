@@ -29,8 +29,8 @@ def scaled_mm_supported_device():
             return torch.cuda.get_device_capability() >= (9, 0) or torch.cuda.get_device_capability() == (8, 9)
     return False
 
-def run_benchmark(m, k, n, a_type='float8_e4m3fn',
-                  b_type='float8_e4m3fn', o_type='bfloat16',
+def run_benchmark(m, k, n, a_type='float8_e4m3',
+                  b_type='float8_e4m3', o_type='bfloat16',
                   fast_accum=False, f=torch._scaled_mm,
                   warmup_iter=30, num_iter=200,
                   forward_only=True, log=True, profile=False):
@@ -80,9 +80,9 @@ def run_benchmark(m, k, n, a_type='float8_e4m3fn',
     a_f8, a_inv_s = to_float8(a, dtype=torch_dtypes[a_type.strip()])
     b_f8, b_inv_s = to_float8(b, dtype=torch_dtypes[b_type.strip()])
     b_f8 = b_f8.t()
- 
+
     out_dtype = torch_dtypes[o_type.strip()]
-    dout = torch.randn(
+    dout = torch.empty(
         m, n, device=device, dtype=out_dtype)
 
     if profile:
@@ -123,6 +123,11 @@ def run_benchmark(m, k, n, a_type='float8_e4m3fn',
         )
         # RuntimeError: derivative for aten::_scaled_mm is not implemented
         # out.backward(dout)
+
+    # work around the runtime error
+    if 'float8' in o_type:
+        out = out.to(torch_dtypes['bfloat16'])
+
     cos_sim = F.cosine_similarity(torch.mm(a, b.t()).reshape(-1), out.reshape(-1), dim=0)
     # Cosine similarity between scaled mm and reference ideally close to 1.0
     print(f'cos_sim {cos_sim.item():.4f}')
@@ -171,9 +176,9 @@ def run_benchmark(m, k, n, a_type='float8_e4m3fn',
     torch.cuda.synchronize(device=device)
     time = begin.elapsed_time(end) / 1000.0
     if forward_only:
-        TFLOPS = forward_flops/(time/num_iter)/1e12 
+        TFLOPS = forward_flops/(time/num_iter)/1e12
     else:
-        TFLOPS = 3*forward_flops/(time/num_iter)/1e12 
+        TFLOPS = 3*forward_flops/(time/num_iter)/1e12
 
     if profile:
         profiler.stop()
@@ -187,12 +192,12 @@ if __name__ == "__main__":
     parser.add_argument("--m", type=int, default=512, help="Number of rows in Matrix A.")
     parser.add_argument("--k", type=int, default=256, help="Number of columns in Matrix A.")
     parser.add_argument("--n", type=int, default=1024, help="Number of columns in Matrix B.")
-    parser.add_argument("--a_type", type=str, default='float8_e4m3fn', help="Precision of Matrix A.")
-    parser.add_argument("--b_type", type=str, default='float8_e4m3fn', help="Precision of Matrix B.")
+    parser.add_argument("--a_type", type=str, default='float8_e4m3', help="Precision of Matrix A.")
+    parser.add_argument("--b_type", type=str, default='float8_e4m3', help="Precision of Matrix B.")
     parser.add_argument("--o_type", type=str, default='bfloat16', help="Precision of Matrix O.")
 
-    # This flag enables CUBLASLT_MATMUL_DESC_FAST_ACCUM here which is defined as: 
-    # Flag for managing FP8 fast accumulation mode. When enabled, problem execution might be faster 
+    # This flag enables CUBLASLT_MATMUL_DESC_FAST_ACCUM here which is defined as:
+    # Flag for managing FP8 fast accumulation mode. When enabled, problem execution might be faster
     # but at the cost of lower accuracy because intermediate results will not periodically be promoted to a higher precision
     parser.add_argument("--fast_accum", action='store_true', help="Use fast accumulation.")
 
