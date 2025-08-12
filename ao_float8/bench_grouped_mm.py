@@ -6,7 +6,6 @@
 import random
 from typing import Optional
 
-import fire
 import pandas as pd
 import torch
 from utils import (
@@ -19,14 +18,14 @@ from utils import (
 @torch.inference_mode()
 def run(
     n_limit: Optional[int] = None,
-    out_filename: Optional[str] = None,
     M: Optional[int] = None,
     K: Optional[int] = None,
     N: Optional[int] = None,
     E: Optional[int] = None,  # dim 0 of B tensor (num experts)
-    use_gpu_kernel_time: bool = True,
+    out_filename: Optional[str] = None,
     shape_gen_name="llama4_17bx16e",
     recipe: str = "rowwise",
+    use_gpu_kernel_time: bool = True,
 ):
     device = "cuda"
 
@@ -119,7 +118,7 @@ def run(
             tops, peak_tops, use_gpu_kernel_time, do_matmul, A, B
         )
         print(
-            f"time_sec {time_sec:.2E}, tops/sec {tops_sec:.2E}, pct_peak {pct_top_peak:.3f}"
+            f"torch.float8_e4m3 time_sec {time_sec:.2E}, tops/sec {tops_sec:.2E}, pct_peak {pct_top_peak:.3f}"
         )
 
         del A, B
@@ -183,7 +182,8 @@ def generate_jagged_offs(E, M, dtype=torch.int32, device="cuda"):
 
 
 def main() -> None:
-    fire.Fire(run)
+    run(shape_gen_name="llama4_17bx16e")
+    run(shape_gen_name="llama4_17bx128e")
 
 
 if __name__ == "__main__":
