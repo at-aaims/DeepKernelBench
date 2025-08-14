@@ -182,8 +182,10 @@ def generate_jagged_offs(E, M, dtype=torch.int32, device="cuda"):
 
 
 def main() -> None:
-    run(shape_gen_name="llama4_17bx16e")
-    run(shape_gen_name="llama4_17bx128e")
+    run(shape_gen_name="llama4_17bx16e",
+        out_filename="grouped_mm_llama4_17bx16e.txt")
+    run(shape_gen_name="llama4_17bx128e",
+        out_filename="grouped_mm_llama4_17bx128e.txt")
 
 
 if __name__ == "__main__":
