@@ -31,3 +31,6 @@
 `cd ao_float8`
 `python bench_linear_float8.py -o linear_float8_forgeL.txt --shape_gen_name forgeL`
 
+## benchmark grouped GEMM operations on LLaMa 4 shapes
+`cd ao_float8`
+`python bench_grouped_mm.py`
