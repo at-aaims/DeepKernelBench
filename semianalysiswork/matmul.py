@@ -1,3 +1,4 @@
+import pandas as pd
 import time
 import torch
 from tabulate import tabulate
@@ -113,3 +114,8 @@ table = tabulate(
 print(f"Benchmark results for Realistic GEMM shapes with {warmup=} and {repeats=}")
 print(table)
 
+device_name = torch.cuda.get_device_name(0).replace(' ', '_')
+save_file = f"semianalysis_{device_name}_results.csv"
+df = pd.DataFrame.from_records(results, columns=headers)
+df.to_csv(save_file)
+print(f"Saved results to {save_file}")
