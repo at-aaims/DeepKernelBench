@@ -3,6 +3,7 @@ import argparse, importlib
 from pathlib import Path
 import pandas as pd
 import concurrent.futures as cf
+import torch
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -25,6 +26,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Number of parallel processes (0 = run serially, default: 0)",
     )
+    p.add_argument("--save", action="store_true", help="Save the results in CSV")
     return p.parse_args()
 
 def main() -> None:
@@ -36,7 +38,8 @@ def main() -> None:
         idx, params = row
         print(f"[{idx}] running with {params}")
         metrics = bench.run_benchmark(**params)
-        return idx, metrics
+        params['Performance (TFLOPS)'] = metrics
+        return idx, params  # 2 elements are required for dict()
 
     iterable = df.to_dict(orient="index").items()
     if args.max_workers:
@@ -44,6 +47,13 @@ def main() -> None:
             results = dict(pool.map(_call, iterable))
     else:
         results = dict(map(_call, iterable))
+
+    if args.save:
+        device_name = torch.cuda.get_device_name(0).replace(' ', '_')
+        df = pd.DataFrame.from_records(tuple(results.values()))
+        save_file = f"{args.bench_script}_{device_name}.csv"
+        df.to_csv(save_file)
+        print(f"Saved results to {save_file}")
 
 if __name__ == "__main__":
     main()
