@@ -125,6 +125,7 @@ def run_benchmark(batch_size, m, k, n, a_type='bfloat16',
         profiler.stop()
 
     print(f"{num_iter / time:.6f} iter/s, {time:.3f} sec, {TFLOPS:.1f} TFLOPS")
+    return TFLOPS
 
 if __name__ == "__main__":
 
