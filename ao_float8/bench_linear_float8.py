@@ -56,58 +56,6 @@ print(f"GPU name: {gpu_name}")
 
 dtype_to_peak_tops = get_peak_tops_from_spec(gpu_name)
 
-'''
-gpu_name_to_specs = {
-    "NVIDIA H200": {
-        "fp32_peak_tops": 67e12,
-        "fp16_peak_tops": 989e12,
-        "bf16_peak_tops": 989e12,
-        "int8_peak_tops": 1979e12,
-        "fp8_peak_tops": 1979e12,
-    },
-    "NVIDIA H200 NVL": {
-        "fp32_peak_tops": 60e12,
-        "fp16_peak_tops": 835e12,
-        "bf16_peak_tops": 835e12,
-        "int8_peak_tops": 1670e12,
-        "fp8_peak_tops": 1670e12,
-    },
-    "NVIDIA H100": {
-        # https://www.nvidia.com/en-us/data-center/h100/, divide by 2 because no sparsity
-         # H100 SXM specs: bottom of https://www.nvidia.com/en-us/data-center/h100/
-        "fp32_peak_tops": 67e12,
-        "fp16_peak_tops": 989e12,
-        "bf16_peak_tops": 989e12,
-        "int8_peak_tops": 1979e12,
-        "fp8_peak_tops": 1979e12,
-    },
-    "NVIDIA H100 NVL": {
-        "fp32_peak_tops": 60e12,
-        "fp16_peak_tops": 835e12,
-        "bf16_peak_tops": 835e12,
-        "int8_peak_tops": 1670e12,
-        "fp8_peak_tops": 1670e12,
-    },
-    "AMD Instinct MI300X": {
-        # https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf, page 1,
-        "fp32_peak_tops": 163e12,
-        "fp16_peak_tops": 1307e12,
-        "bf16_peak_tops": 1307e12,
-        "int8_peak_tops": 2614e12,
-        "fp8_peak_tops": 2614e12,
-    },
-    "AMD Instinct MI300A": {
-        "fp32_peak_tops": 122e12,
-        "fp16_peak_tops": 980e12,
-        "bf16_peak_tops": 980e12,
-        "int8_peak_tops": 1961e12,
-        "fp8_peak_tops": 1961e12,
-    },
-}
-'''
-
-
-
 # prevent splitting columns when printing a data frame
 pd.set_option("display.expand_frame_repr", False)
 # print the entire data frame
