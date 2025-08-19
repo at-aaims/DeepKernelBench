@@ -6,6 +6,10 @@
 ## Benchmark attention operations
 `python driver.py --bench-script attn.benchmark_attn --csv-file attn/shapes.csv`
 
+## Benchmark Flash attention2 operations
+`cd attn2`
+`python benchmark_attn.py`
+
 ## Benchmark GEMM operations
 `python driver.py --bench-script gemm.benchmark_gemm --csv-file gemm/shapes.csv`  
 `python driver.py --bench-script gemm.benchmark_gemm --csv-file gemm/llama2-70b-shapes.csv`  
