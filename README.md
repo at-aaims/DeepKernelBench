@@ -34,3 +34,7 @@
 ## benchmark grouped GEMM operations on LLaMa 4 shapes
 `cd ao_float8`
 `python bench_grouped_mm.py`
+
+## benchmark the GEMM operations in TritonBLAS
+`cd triton_gemm/tritonBLAS`
+`python matmul.py`
