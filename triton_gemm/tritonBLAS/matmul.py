@@ -40,56 +40,56 @@ for (m, n, k) in shapes:
     # Matmul benchmark in bf16
     a = torch.randn(m, k, device=device, dtype=dtype_bf16)
     b = torch.randn(n, k, device=device, dtype=dtype_bf16).transpose(-1, -2)
-    c = torch.zeros(n, n, device=device, dtype=dtype_bf16)
+    c = torch.zeros(m, n, device=device, dtype=dtype_bf16)
+
+    torch_c = torch.matmul(a, b)
+    #print("verify tritonblas.matmul(a, b, c)")
+    tritonblas.matmul(a, b, c)
+    torch.testing.assert_close(torch_c, c, atol=1, rtol=1)
+
+    #print("verify tritonblas.matmul_lt(a, b, c)")
+    selector = tritonblas.MatmulHeuristicResult(m, n, k, a.dtype, b.dtype, c.dtype)
+    tritonblas.matmul_lt(a, b, c, selector)
+    torch.testing.assert_close(torch_c, c, atol=1, rtol=1)
 
     with torch.inference_mode():
-        ms_bf16 = do_bench(lambda: torch.matmul(a, b), warmup=warmup, rep=repeats)
+        ms_bf16 = do_bench(lambda: torch.matmul(a, b, out=torch_c), warmup=warmup, rep=repeats)
     matmul_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
     time.sleep(timeout)
 
     if import_tb:
-        ms_bf16 = do_bench(lambda: tritonblas.matmul(a, b, c, True), warmup=warmup, rep=repeats)
-        streamk_matmul_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
+        ms_bf16 = do_bench(lambda: tritonblas.matmul(a, b, c), warmup=warmup, rep=repeats)
+        tb_matmul_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
         time.sleep(timeout)
 
-        ms_bf16 = do_bench(lambda: tritonblas.matmul(a, b, c, False), warmup=warmup, rep=repeats)
-        persist_matmul_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
+        ms_bf16 = do_bench(lambda: tritonblas.matmul_lt(a, b, c, selector), warmup=warmup, rep=repeats)
+        tb_matmul_lt_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
         time.sleep(timeout)
 
-        selector = tritonblas.MatmulHeuristicResult(m, n, k, a.dtype, b.dtype, c.dtype)
-
-        ms_bf16 = do_bench(lambda: tritonblas.matmul_lt(a, b, c, selector, True), warmup=warmup, rep=repeats)
-        streamk_ltmatmul_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
-        time.sleep(timeout)
-
-        ms_bf16 = do_bench(lambda: tritonblas.matmul_lt(a, b, c, selector, False), warmup=warmup, rep=repeats)
-        persist_ltmatmul_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
-        time.sleep(timeout)
     else:
-        streamk_matmul_tflops_bf16 = 0
-        persist_matmul_tflops_bf16 = 0
-        streamk_ltmatmul_tflops_bf16 = 0
-        persist_ltmatmul_tflops_bf16 = 0
+        tb_matmul_tflops_bf16 = 0
+        tb_matmul_lt_tflops_bf16 = 0
 
+
+    print(f"({m}, {n}, {k})",
+          f"{matmul_tflops_bf16:.1f} TFLOPS",
+          f"{tb_matmul_tflops_bf16:.1f} TFLOPS",
+          f"{tb_matmul_lt_tflops_bf16:.1f} TFLOPS")
 
     # Append Results
     results.append([
         f"({m}, {n}, {k})",
         f"{matmul_tflops_bf16:.1f} TFLOPS",
-        f"{streamk_matmul_tflops_bf16:.1f} TFLOPS",
-        f"{persist_matmul_tflops_bf16:.1f} TFLOPS",
-        f"{streamk_ltmatmul_tflops_bf16:.1f} TFLOPS",
-        f"{persist_ltmatmul_tflops_bf16:.1f} TFLOPS"
+        f"{tb_matmul_tflops_bf16:.1f} TFLOPS",
+        f"{tb_matmul_lt_tflops_bf16:.1f} TFLOPS"
     ])
 
 # Print results
 headers = [
     "Shape (M, N, K)",
     "bf16 torch.matmul",
-    "bf16 tritonblas.matmul (streamK=True)",
-    "bf16 tritonblas.matmul (streamK=False)",
-    "bf16 tritonblas.matmul_lt (streamK=True)",
-    "bf16 tritonblas.matmul_lt (streamK=False)"
+    "bf16 tritonblas.matmul",
+    "bf16 tritonblas.matmul_lt",
 ]
 
 table = tabulate(
