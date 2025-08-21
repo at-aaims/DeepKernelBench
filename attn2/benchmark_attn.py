@@ -1,6 +1,7 @@
 # Reference
 # https://github.com/Dao-AILab/flash-attention/benchmarks/benchmark_attn.py
 #
+# FlashAttention only supports fp16 and bf16 data type
 import math
 import pandas as pd
 import pickle
@@ -63,7 +64,6 @@ repeats = 200
 device = 'cuda'
 dtype = torch.bfloat16
 
-#bs_seqlen_vals = [(32, 512), (16, 1024), (8, 2048), (4, 4096), (2, 8192), (1, 16384)]
 causal_vals = [False, True]
 
 # batch, seqlen, nheads, head_dim
@@ -92,6 +92,7 @@ for causal in causal_vals:
         config = (causal, batch_size, seqlen, nheads, headdim)
         qkv = torch.randn(batch_size, seqlen, 3, nheads, headdim, device=device, dtype=dtype,
                           requires_grad=True)
+
         f, b = time_fwd_bwd(
             flash_attn_qkvpacked_func, qkv, dropout_p, causal=causal, repeats=repeats, verbose=False
         )
@@ -160,13 +161,13 @@ for causal in causal_vals:
 headers = [
     "method",
     "config",
-    "fwd(FP16)",
-    "bwd(FP16)",
-    "fwd+bwd(FP16)"
+    "fwd(BF16)",
+    "bwd(BF16)",
+    "fwd+bwd(BF16)"
 ]
 
 device_name = torch.cuda.get_device_name(0).replace(' ', '_')
-save_file = f"benchmark_attn2_{device_name}_results.csv"
+save_file = f"benchmark_attn_{device_name}_results.csv"
 df = pd.DataFrame.from_records(results, columns=headers)
 df.to_csv(save_file)
 print(f"Saved results to {save_file}")
