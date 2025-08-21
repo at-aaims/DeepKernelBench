@@ -14,7 +14,7 @@ MAX_JOBS=$((`nproc` - 1)) pip install -v .
 `python driver.py --bench-script attn.benchmark_attn --csv-file attn/shapes.csv`
 
 ## Benchmark Flash attention2 operations
-`cd attn2`
+`cd attn2` 
 `python benchmark_attn.py`
 
 ## Benchmark GEMM operations
@@ -26,28 +26,28 @@ MAX_JOBS=$((`nproc` - 1)) pip install -v .
 ## Benchmark batched GEMM operations
 `python driver.py --bench-script bgemm.benchmark_bgemm --csv-file bgemm/shapes.csv`
 
-## Integer GEMM operations
-`cd int8_gemm`
+## Benchmark integer GEMM operations
+`cd int8_gemm` 
 `python intmm.py --file_path intmm_shapes.csv`
 
 ## Reproduce results published by https://semianalysis.com/
-`cd semianalysiswork`
+`cd semianalysiswork` 
 `python matmul.py`
 
-## benchmark forward/backward of `Linear` and `Float8Linear` on LLaMa 2 70B shapes
-`cd ao_float8`
+## Benchmark forward/backward of `Linear` and `Float8Linear` on LLaMa 2 70B shapes
+`cd ao_float8` 
 `python bench_linear_float8.py -o linear_float8_llama70.txt --shape_gen_name llama`
 
-## benchmark forward/backward of `Linear` and `Float8Linear` on ForgeL shapes
-`cd ao_float8`
+## Benchmark forward/backward of `Linear` and `Float8Linear` on ForgeL shapes
+`cd ao_float8` 
 `python bench_linear_float8.py -o linear_float8_forgeL.txt --shape_gen_name forgeL`
 
-## benchmark grouped GEMM operations on LLaMa 4 shapes
+## Benchmark grouped GEMM operations on LLaMa 4 shapes
 `cd ao_float8`
-`python bench_grouped_mm.py`
+`python bench_grouped_mm.py` 
 
-## benchmark the GEMM operations in TritonBLAS
-`cd triton_gemm/tritonBLAS`
+## Benchmark the GEMM operations in TritonBLAS
+`cd triton_gemm/tritonBLAS` 
 `python matmul.py`
 
 # Reference
