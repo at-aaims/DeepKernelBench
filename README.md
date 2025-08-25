@@ -72,6 +72,12 @@ cd triton_gemm/tritonBLAS
 python matmul.py
 ```
 
+## Benchmark the GEMM operations in AITER
+```
+cd triton_gemm/aiter
+python matmul.py
+```
+
 # Reference
 ```
 https://rocm.blogs.amd.com/artificial-intelligence/flash-attention/README.html
