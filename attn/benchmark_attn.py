@@ -162,18 +162,25 @@ if __name__ == "__main__":
     parser.add_argument("--causal", action='store_true', help="Enable causal attention masking.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
-    args = parser.parse_args()
 
+    args = parser.parse_args()
+    batch_size = args.batch_size
+    seq_length = args.seq_length
+    num_heads = args.num_heads
+    head_dim = args.head_dim
+    num_iter = args.num_iter
+    causal = args.causal
     forward_only = args.forward_only
     profile = args.profile
-    num_iter = args.num_iter
 
     for f in [
         flash_attn_func,
     ]:
         torch.cuda.empty_cache()
-        if rank == 0:
-            print(f"# {f.__name__}")
+        #if rank == 0:
+            #print(f"# {f.__name__}")
         run_benchmark(
-           args, f, forward_only=forward_only, num_iter=num_iter, log=True, profile=profile
+           batch_size, seq_length, num_heads, head_dim,
+           f, forward_only=forward_only, causal=causal, num_iter=num_iter,
+           log=True, profile=profile
         )
