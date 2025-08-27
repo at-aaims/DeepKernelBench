@@ -16,7 +16,6 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     dtype = torch.bfloat16
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
-    deterministic = False
 
     assert head_dim % 8 == 0
 
