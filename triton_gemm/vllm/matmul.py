@@ -49,7 +49,7 @@ for (m, n, k) in shapes:
 
     # Pre-quantize A,B
     A_vllm, A_scale_vllm = per_token_group_quant_fp8(a, block_size[1])
-    B_vllm, B_scale_vllm = per_block_cast_to_fp8(b2, [128, 128], use_ue8m0=True)
+    B_vllm, B_scale_vllm = per_block_cast_to_fp8(b2, [128, 128], use_ue8m0=False)
 
     c2 = w8a8_block_fp8_matmul(A_vllm,
                                B_vllm,
