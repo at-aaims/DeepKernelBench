@@ -83,11 +83,24 @@ cd triton_gemm/aiter
 python matmul.py
 ```
 
+## Benchmark the FP8-GEMM operations in VLLM
+```
+cd triton_gemm/vllm
+python matmul.py
+```
+
+## Benchmark Torch Geometric operations
+```
+cd geometric/kernel
+python benchmark_kernel.py --layers 4 --hiddens 866 --epochs 100 --batch_size 128 --inference --compile
+```
+
 # Reference
 ```
 https://rocm.blogs.amd.com/artificial-intelligence/flash-attention/README.html
 https://github.com/pytorch/ao
 https://github.com/ROCm/tritonBLAS
 https://github.com/ROCm/aiter
+https://github.com/vllm-project/vllm
 https://github.com/Dao-AILab/flash-attention
 ```
