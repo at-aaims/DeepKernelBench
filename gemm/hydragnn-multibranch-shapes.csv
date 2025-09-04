@@ -1,0 +1,10 @@
+m,k,n,a_type,b_type,o_type,forward_only
+866, 45926, 866, bfloat16, bfloat16, bfloat16, 0
+866, 38896, 866, bfloat16, bfloat16, bfloat16, 0
+45926, 866, 866, bfloat16, bfloat16, bfloat16, 0
+866, 44090, 866, bfloat16, bfloat16, bfloat16, 0
+866, 40580, 866, bfloat16, bfloat16, bfloat16, 0
+44090, 866, 866, bfloat16, bfloat16, bfloat16, 0
+866, 39554, 866, bfloat16, bfloat16, bfloat16, 0
+866, 39570, 866, bfloat16, bfloat16, bfloat16, 0
+39554, 866, 866, bfloat16, bfloat16, bfloat16, 0
