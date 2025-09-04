@@ -10,8 +10,9 @@ def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
     return 4 * batch_size * s**2 * h
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
+                  causal=False, forward_only=False,
                   f=flash_attn_func, warmup_iter=10, num_iter=100,
-                  forward_only=False, causal=False, log=True, profile=False):
+                  log=True, profile=False):
     dtype = torch.bfloat16
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
@@ -158,9 +159,9 @@ if __name__ == "__main__":
     parser.add_argument("--seq_length", type=int, default=128, help="Sequence length for input data.")
     parser.add_argument("--num_heads", type=int, default=8, help="Number of attention heads.")
     parser.add_argument("--head_dim", type=int, default=64, help="Dimension of each attention head.")
-    parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
     parser.add_argument("--causal", action='store_true', help="Enable causal attention masking.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
+    parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
 
     args = parser.parse_args()
@@ -181,6 +182,7 @@ if __name__ == "__main__":
             #print(f"# {f.__name__}")
         run_benchmark(
            batch_size, seq_length, num_heads, head_dim,
-           f, forward_only=forward_only, causal=causal, num_iter=num_iter,
+           causal, forward_only,
+           f, num_iter=num_iter,
            log=True, profile=profile
         )
