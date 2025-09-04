@@ -31,6 +31,7 @@ python driver.py --bench-script sdpa.benchmark_attn --csv-file attn/shapes.csv
 ## Benchmark GEMM operations
 ```
 python driver.py --bench-script gemm.benchmark_gemm --csv-file gemm/forgeL-shapes.csv
+python driver.py --bench-script gemm.benchmark_gemm --csv-file gemm/hydragnn-multibranch-shapes.csv
 python driver.py --bench-script gemm.benchmark_gemm --csv-file gemm/llama2-70b-shapes.csv
 python driver.py --bench-script fp8_gemm.benchmark_gemm --csv-file fp8_gemm/forgeL-shapes.csv
 python driver.py --bench-script fp8_gemm.benchmark_gemm --csv-file fp8_gemm/llama2-70b-shapes.csv
