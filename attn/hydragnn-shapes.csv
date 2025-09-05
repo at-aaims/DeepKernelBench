@@ -1,0 +1,5 @@
+batch_size,seqlen,num_heads,head_dim,causal,forward_only
+1, 825, 8, 8, 1, 0
+1, 801, 8, 8, 1, 0
+1, 825, 8, 8, 1, 1
+1, 801, 8, 8, 1, 1
