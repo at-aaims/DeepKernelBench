@@ -11,8 +11,11 @@ def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
     return 4 * batch_size * s**2 * h
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
-                  f=F.scaled_dot_product_attention, warmup_iter=30, num_iter=200,
-                  forward_only=True, causal=True, log=True, profile=False):
+                  causal=True, forward_only=True, 
+                  f=F.scaled_dot_product_attention,
+                  warmup_iter=30, num_iter=200,
+                  log=True, profile=False):
+    is_causal = bool(causal)
     dtype = torch.bfloat16
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
@@ -52,6 +55,23 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         batch_size, seqlen, num_heads, head_dim, device=device, dtype=dtype
     )
 
+    try:
+        q.grad = None
+        k.grad = None
+        v.grad = None
+        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+          out = f(
+              q,
+              k,
+              v,
+              is_causal=is_causal,
+              dropout_p=0,
+          )
+        out.backward(dout)
+    except Exception as e:
+        print(e)
+        return 0
+
     if profile:
         torch.backends.cudnn.benchmark = True
         profiler = torch.profiler.profile(
@@ -75,7 +95,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                 )
             ),
         )
-
+    
 
     for _ in range(warmup_iter):
         q.grad = None
@@ -86,7 +106,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
               q,
               k,
               v,
-              is_causal=causal,
+              is_causal=is_causal,
               dropout_p=0,
           )
         out.backward(dout)
@@ -105,7 +125,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                         q,
                         k,
                         v,
-                        is_causal=causal,
+                        is_causal=is_causal,
                         dropout_p=0,
                     )
                 if profile:
@@ -121,7 +141,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                     q,
                     k,
                     v,
-                    is_causal=causal,
+                    is_causal=is_causal,
                     dropout_p=0,
                 )
             out.backward(dout)
@@ -154,6 +174,9 @@ if __name__ == "__main__":
     parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
     parser.add_argument("--causal", action='store_true', help="Enable causal attention masking.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
+    #parser.add_argument("--backend", type=SDPBackend, nargs='+',
+    #                    default=[SDPBackend.MATH, SDPBackend.FLASH_ATTENTION,
+    #                             SDPBackend.EFFICIENT_ATTENTION, SDPBackend.CUDNN_ATTENTION], help="SDPA backend.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
 
     args = parser.parse_args()
@@ -164,6 +187,7 @@ if __name__ == "__main__":
     num_iter = args.num_iter
     causal = args.causal
     forward_only = args.forward_only
+    #backend = args.backend
     profile = args.profile
 
     for f in [
@@ -174,6 +198,6 @@ if __name__ == "__main__":
         #    print(f"# {f.__name__}")
         run_benchmark(
            batch_size, seq_length, num_heads, head_dim,
-           f, forward_only=forward_only, causal=causal, num_iter=num_iter,
+           causal, forward_only, f, num_iter=num_iter,
            log=True, profile=profile
         )
