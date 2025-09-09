@@ -11,8 +11,9 @@ def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
     return 4 * batch_size * s**2 * h
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
-                  causal=True, forward_only=True, 
+                  causal=True, forward_only=True,
                   f=F.scaled_dot_product_attention,
+                  backend=SDPBackend.FLASH_ATTENTION,
                   warmup_iter=30, num_iter=200,
                   log=True, profile=False):
     is_causal = bool(causal)
@@ -59,7 +60,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         q.grad = None
         k.grad = None
         v.grad = None
-        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        with sdpa_kernel(backend):
           out = f(
               q,
               k,
@@ -101,7 +102,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         q.grad = None
         k.grad = None
         v.grad = None
-        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        with sdpa_kernel(backend):
           out = f(
               q,
               k,
@@ -120,7 +121,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     if forward_only:
         with torch.no_grad():
             for _ in range(num_iter):
-                with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                with sdpa_kernel(backend):
                     _ = f(
                         q,
                         k,
@@ -136,7 +137,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
             q.grad = None
             k.grad = None
             v.grad = None
-            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            with sdpa_kernel(backend):
                 out = f(
                     q,
                     k,
@@ -174,9 +175,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
     parser.add_argument("--causal", action='store_true', help="Enable causal attention masking.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
-    #parser.add_argument("--backend", type=SDPBackend, nargs='+',
-    #                    default=[SDPBackend.MATH, SDPBackend.FLASH_ATTENTION,
-    #                             SDPBackend.EFFICIENT_ATTENTION, SDPBackend.CUDNN_ATTENTION], help="SDPA backend.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
 
     args = parser.parse_args()
@@ -187,17 +185,18 @@ if __name__ == "__main__":
     num_iter = args.num_iter
     causal = args.causal
     forward_only = args.forward_only
-    #backend = args.backend
     profile = args.profile
 
-    for f in [
-       F.scaled_dot_product_attention 
+    f = F.scaled_dot_product_attention
+
+    for backend in [ SDPBackend.MATH,
+                     SDPBackend.FLASH_ATTENTION,
+                     SDPBackend.EFFICIENT_ATTENTION,
+                     SDPBackend.CUDNN_ATTENTION
     ]:
         torch.cuda.empty_cache()
-        #if rank == 0:
-        #    print(f"# {f.__name__}")
         run_benchmark(
            batch_size, seq_length, num_heads, head_dim,
-           causal, forward_only, f, num_iter=num_iter,
+           causal, forward_only, f, backend, num_iter=num_iter,
            log=True, profile=profile
         )
