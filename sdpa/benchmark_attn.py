@@ -21,6 +21,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
 
+    sdpa_backend = SDPBackend(backend)
+
     assert head_dim % 8 == 0
 
     forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
@@ -60,7 +62,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         q.grad = None
         k.grad = None
         v.grad = None
-        with sdpa_kernel(backend):
+        with sdpa_kernel(sdpa_backend):
           out = f(
               q,
               k,
@@ -102,7 +104,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         q.grad = None
         k.grad = None
         v.grad = None
-        with sdpa_kernel(backend):
+        with sdpa_kernel(sdpa_backend):
           out = f(
               q,
               k,
@@ -121,7 +123,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     if forward_only:
         with torch.no_grad():
             for _ in range(num_iter):
-                with sdpa_kernel(backend):
+                with sdpa_kernel(sdpa_backend):
                     _ = f(
                         q,
                         k,
@@ -137,7 +139,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
             q.grad = None
             k.grad = None
             v.grad = None
-            with sdpa_kernel(backend):
+            with sdpa_kernel(sdpa_backend):
                 out = f(
                     q,
                     k,
