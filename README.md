@@ -19,6 +19,7 @@ python driver.py --bench-script neural_operator.benchmark_sfno --csv-file neural
 ```
 
 ## Benchmark Fourier neural operations in PhysicsNeMo
+```
 python driver.py --bench-script neural_operator.benchmark_physicsnemo_fno --csv-file neural_operator/fno_shapes.csv
 ```
 
