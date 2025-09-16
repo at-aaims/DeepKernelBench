@@ -15,7 +15,7 @@ python driver.py --help
 ## Run benchmarks
 README files in attention, geometrics, matrix_multiply, neural_operator provide the commands to run the benchmarks.
 
-# Reference
+## Reference
 ```
 https://rocm.blogs.amd.com/artificial-intelligence/flash-attention/README.html
 https://github.com/pytorch/ao
