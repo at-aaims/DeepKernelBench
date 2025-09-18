@@ -270,7 +270,7 @@ def get_max_flops(flop_count_dict, max_value = 0):
     return max_value
 
 def run_benchmark(batch_size, forward_only=False,
-                  yaml_config='neural_operator/config/AFNO.yaml', 
+                  yaml_config='./config/AFNO.yaml', 
                   config='afno_backbone',
                   warmup_iter=10, num_iter=100,
                   log=True, profile=False):
