@@ -19,7 +19,7 @@ from torch.nn.modules.container import Sequential
 from torch.utils.checkpoint import checkpoint_sequential
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
-from .utils.YParams import YParams
+from utils.YParams import YParams
 
 
 class Mlp(nn.Module):
