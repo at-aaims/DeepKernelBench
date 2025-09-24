@@ -496,7 +496,7 @@ gpu_name_to_specs = {
         "int8_peak_tops": 1670e12,
         "fp8_peak_tops" : 1670e12,
     },
-    "NVIDIA H100": {
+    "NVIDIA H100 80GB HBM3" : {
         # https://www.nvidia.com/en-us/data-center/h100/, divide by 2 because no sparsity
          # H100 SXM specs: bottom of https://www.nvidia.com/en-us/data-center/h100/
         "fp32_peak_tops": 67e12,
