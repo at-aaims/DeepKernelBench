@@ -36,8 +36,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     torch.manual_seed(0)
     q = torch.randn(
         batch_size,
-        seqlen,
         num_heads,
+        seqlen,
         head_dim,
         device=device,
         dtype=dtype,
@@ -45,8 +45,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     )
     k = torch.randn(
         batch_size,
-        seqlen,
         num_heads,
+        seqlen,
         head_dim,
         device=device,
         dtype=dtype,
@@ -54,22 +54,33 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     )
     v = torch.randn(
         batch_size,
-        seqlen,
         num_heads,
+        seqlen,
         head_dim,
         device=device,
         dtype=dtype,
         requires_grad=True,
     )
+
+    dout = torch.randn(
+        batch_size,
+        num_heads,
+        seqlen,
+        head_dim,
+        device=device,
+        dtype=dtype,
+    )
     
     block_mask = create_block_mask(
-        causal_mask, B=None, H=None, Q_LEN=seqlen, KV_LEN=seqlen, device=device, _compile=True
+        causal_mask, B=None, H=None, Q_LEN=seqlen, KV_LEN=seqlen,
+        device=device, _compile=True
     )
 
     torch.cuda.synchronize()
 
     for i in range(warmup_iter):
-        _ = fn(q, k, v, block_mask) if use_block_mask else fn(q, k, v)
+        out = fn(q, k, v, block_mask) if use_block_mask else fn(q, k, v)
+        out.backward(dout)
     torch.cuda.synchronize()
 
     begin = torch.cuda.Event(enable_timing=True)
@@ -91,7 +102,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     end.record()
     torch.cuda.synchronize(device=device)
     time = begin.elapsed_time(end) / 1000.0
-    avg = (time/num_iter)/1e12 
+    avg = time / num_iter
 
     # throughput: tokens/sec = B * L / avg_time
     toks_per_sec = (batch_size * seqlen) / avg if avg > 0 else float("inf")
@@ -137,7 +148,7 @@ if __name__ == "__main__":
         print("Benchmarking flex_attention ...")
         r = run_benchmark(
            batch_size, seq_length, num_heads, head_dim,
-           call_flex, causal, forward_only,
+           call_flex, causal, forward_only, use_block_mask=True,
            num_iter=num_iter,
            log=True, profile=profile
         )
