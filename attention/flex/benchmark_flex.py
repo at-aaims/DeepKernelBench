@@ -23,7 +23,7 @@ def call_sdpa(q, k, v):
     return F.scaled_dot_product_attention(q, k, v, is_causal=True)
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
-                  fn=call_flex, causal=False, forward_only=False, use_block_mask=False,
+                  fn=call_flex, forward_only=False, use_block_mask=False,
                   warmup_iter=10, num_iter=100,
                   log=True, profile=False):
     dtype = torch.bfloat16
@@ -111,13 +111,21 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     peak_bytes = torch.cuda.max_memory_allocated(device)
     peak_mem_gb = peak_bytes / (1024**3)
 
-    results = {
+    r = {
         "name": fn.__name__,
         "avg_s": avg,
         "tokens_per_sec": toks_per_sec,
         "peak_mem_gb": peak_mem_gb,
     }
-    return results
+    print(f"{r['name']}:")
+    print(f"  avg time     : {r['avg_s'] * 1000:.3f} ms")
+    print(
+        f"  tokens/sec   : {r['tokens_per_sec'] / 1e6:.3f} Mtokens/s ({r['tokens_per_sec']:.0f} toks/s)"
+    )
+    if r["peak_mem_gb"] is not None:
+        print(f"  peak memory  : {r['peak_mem_gb']:.3f} GB")
+    print("")
+    return r
 
 
 if __name__ == "__main__":
@@ -128,7 +136,6 @@ if __name__ == "__main__":
     parser.add_argument("--seq_length", type=int, default=128, help="Sequence length for input data.")
     parser.add_argument("--num_heads", type=int, default=8, help="Number of attention heads.")
     parser.add_argument("--head_dim", type=int, default=64, help="Dimension of each attention head.")
-    parser.add_argument("--causal", action='store_true', help="Enable causal attention masking.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
     parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
@@ -139,7 +146,6 @@ if __name__ == "__main__":
     num_heads = args.num_heads
     head_dim = args.head_dim
     num_iter = args.num_iter
-    causal = args.causal
     forward_only = args.forward_only
     profile = args.profile
 
@@ -148,7 +154,7 @@ if __name__ == "__main__":
         print("Benchmarking flex_attention ...")
         r = run_benchmark(
            batch_size, seq_length, num_heads, head_dim,
-           call_flex, causal, forward_only, use_block_mask=True,
+           call_flex, forward_only, use_block_mask=True,
            num_iter=num_iter,
            log=True, profile=profile
         )
@@ -160,7 +166,7 @@ if __name__ == "__main__":
         print("Benchmarking scaled_dot_product_attention (SDPA) ...")
         r = run_benchmark(
            batch_size, seq_length, num_heads, head_dim,
-           call_sdpa, causal, forward_only,
+           call_sdpa, forward_only,
            num_iter=num_iter,
            log=True, profile=profile
         )
