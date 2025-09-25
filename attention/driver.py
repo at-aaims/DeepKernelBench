@@ -38,7 +38,11 @@ def main() -> None:
         idx, params = row
         print(f"[{idx}] running with {params}")
         metrics = bench.run_benchmark(**params)
-        params['Performance (TFLOPS)'] = metrics
+        if isinstance(metrics, dict):
+            for k, v in metrics.items():
+                params[k] = v
+        else:
+            params['Performance (TFLOPS)'] = metrics
         return idx, params  # 2 elements are required for dict()
 
     iterable = df.to_dict(orient="index").items()
