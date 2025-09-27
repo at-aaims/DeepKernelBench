@@ -22,6 +22,11 @@ def call_flex(q, k, v, block_mask):
 def call_sdpa(q, k, v):
     return F.scaled_dot_product_attention(q, k, v, is_causal=True)
 
+def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
+    s = seqlen * ngpus
+    h = num_heads * head_dim
+    return 4 * batch_size * s**2 * h
+
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
                   fn=call_flex, forward_only=False, use_block_mask=False,
                   warmup_iter=10, num_iter=100,
@@ -33,7 +38,9 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
 
+    forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
     torch.manual_seed(0)
+
     q = torch.randn(
         batch_size,
         num_heads,
@@ -102,10 +109,12 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     end.record()
     torch.cuda.synchronize(device=device)
     time = begin.elapsed_time(end) / 1000.0
-    avg = time / num_iter
+    avg_time = time/num_iter
 
-    # throughput: tokens/sec = B * L / avg_time
-    toks_per_sec = (batch_size * seqlen) / avg if avg > 0 else float("inf")
+    if forward_only:
+        tflops = forward_flops/avg_time/1e12
+    else:
+        tflops = 3*forward_flops/avg_time/1e12
 
     peak_mem_gb = None
     peak_bytes = torch.cuda.max_memory_allocated(device)
@@ -113,15 +122,13 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
 
     r = {
         "name": fn.__name__,
-        "avg_s": avg,
-        "tokens_per_sec": toks_per_sec,
+        "avg_s": avg_time,
+        "tflops": tflops,
         "peak_mem_gb": peak_mem_gb,
     }
     print(f"{r['name']}:")
-    print(f"  avg time     : {r['avg_s'] * 1000:.3f} ms")
-    print(
-        f"  tokens/sec   : {r['tokens_per_sec'] / 1e6:.3f} Mtokens/s ({r['tokens_per_sec']:.0f} toks/s)"
-    )
+    print(f"  average time     : {r['avg_s'] * 1000:.3f} ms")
+    print(f"  TFLOPS   : {r['tflops']}")
     if r["peak_mem_gb"] is not None:
         print(f"  peak memory  : {r['peak_mem_gb']:.3f} GB")
     print("")
@@ -177,10 +184,8 @@ if __name__ == "__main__":
     print("\n--- Results ---")
     for r in results:
         print(f"{r['name']}:")
-        print(f"  avg time     : {r['avg_s'] * 1000:.3f} ms")
-        print(
-            f"  tokens/sec   : {r['tokens_per_sec'] / 1e6:.3f} Mtokens/s ({r['tokens_per_sec']:.0f} toks/s)"
-        )
+        print(f"  average time     : {r['avg_s'] * 1000:.3f} ms")
+        print(f"  TFLOPS   : {r['tflops']}")
         if r["peak_mem_gb"] is not None:
             print(f"  peak memory  : {r['peak_mem_gb']:.3f} GB")
         print("")
