@@ -18,7 +18,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                   log=True, profile=False):
     is_causal = bool(causal)
     dtype = torch.bfloat16
-    device = torch.device(f"cuda:0")
+    device = torch.device("cuda:0")
     torch.cuda.set_device(device)
 
     sdpa_backend = SDPBackend(backend)
@@ -28,8 +28,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
     q = torch.randn(
         batch_size,
-        seqlen,
         num_heads,
+        seqlen,
         head_dim,
         device=device,
         dtype=dtype,
@@ -37,8 +37,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     )
     k = torch.randn(
         batch_size,
-        seqlen,
         num_heads,
+        seqlen,
         head_dim,
         device=device,
         dtype=dtype,
@@ -46,8 +46,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     )
     v = torch.randn(
         batch_size,
-        seqlen,
         num_heads,
+        seqlen,
         head_dim,
         device=device,
         dtype=dtype,
@@ -55,7 +55,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     )
  
     dout = torch.randn(
-        batch_size, seqlen, num_heads, head_dim, device=device, dtype=dtype
+        batch_size, num_heads, seqlen, head_dim, device=device, dtype=dtype
     )
 
     try:
