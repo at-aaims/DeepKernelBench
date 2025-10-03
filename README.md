@@ -15,6 +15,25 @@ python driver.py --help
 ## Run benchmarks
 README files in attention, geometrics, matrix_multiply, neural_operator provide the commands to run the benchmarks.
 
+## Support matrix
+| Benchmark name | Intel Max1100 | AMD MI250X | AMD MI300A | NVIDIA H100 |
+|---|---|---|---|---|
+| att  | ❌ | ✅ |✅ | ✅ |
+| att2 | ❌| ✅ |✅ | ✅ |
+| sdpa | limited| ✅ |✅ | ✅ |
+| flex | ❌ | ✅ |✅ | ✅ |
+| ao_float8 | ❌ |❌ |✅ | ✅ |
+| fp8_gemm | ❌ |❌ |✅ | ✅ |
+| semianalysiswork | ❌ |❌ | ✅ |✅|
+| bgemm | ✅ |✅ | ✅ |✅ |
+| gemm | ✅ |✅ | ✅ |✅ |
+| int8_gemm | ✅ |✅ | ✅ |✅ |
+| aiter | ❌ |✅ | ✅ |❌|
+| tritonBLAS | ❌ |✅ | ✅ |❌|
+| vllm | ❌ |❌ | ✅ |✅|
+| geometrics kernel | ✅ |✅ | ✅ |✅ |
+| neural_operators | ❌ | ✅ |✅ | ✅ |
+
 ## Reference
 ```
 https://rocm.blogs.amd.com/artificial-intelligence/flash-attention/README.html
