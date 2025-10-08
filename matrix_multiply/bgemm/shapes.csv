@@ -14,5 +14,7 @@ batch_size,m,k,n,a_type,b_type,o_type,forward_only
 384, 2048, 2048, 128, bfloat16, bfloat16, bfloat16, 0
 384, 2048, 128, 2048, bfloat16, bfloat16, bfloat16, 1
 384, 2048, 2048, 128, bfloat16, bfloat16, bfloat16, 1
+8, 96, 16560, 96, bfloat16, bfloat16, bfloat16, 0
+8, 96, 16560, 96, bfloat16, bfloat16, bfloat16, 1
 
 
