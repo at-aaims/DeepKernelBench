@@ -284,12 +284,16 @@ def run_benchmark(batch_size, forward_only=False,
     device = torch.device(f"xpu:0")
     torch.xpu.set_device(device)
 
-    fno = AFNONet(params).to(device)
-    model_input = torch.randn(batch_size, params['N_in_channels'],
-                              720, 1440, device=device)
+    # verify host and device results are close
+    fno = AFNONet(params)
+    model_input = torch.randn(batch_size, params['N_in_channels'], 720, 1440)
+    result_cpu = fno(model_input)
+
+    fno = fno.to(device)
+    model_input = model_input.to(device)
     result = fno(model_input)
-    print(result.shape)
-    print(torch.norm(result))
+
+    torch.testing.assert_close(result.detach().cpu(), result_cpu, atol=1e-2, rtol=0)
 
     with FlopTensorDispatchMode(fno) as ftdm:
         # count forward flops
@@ -372,7 +376,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--yaml_config", default='./config/AFNO.yaml', type=str)
     parser.add_argument("--config", default='afno_backbone', type=str)
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size.")
+    parser.add_argument("--batch_size", type=int, default=4, help="Batch size.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
     parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
