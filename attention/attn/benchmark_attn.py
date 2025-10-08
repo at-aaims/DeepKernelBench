@@ -1,13 +1,18 @@
 import os
+import sys
 import torch
 from flash_attn import flash_attn_func
 import argparse, importlib
 
+parent_dir = ".."
+sys.path.append(parent_dir)
+from reference_attn import check_flash_attn 
 
 def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
     s = seqlen * ngpus
     h = num_heads * head_dim
     return 4 * batch_size * s**2 * h
+
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
                   causal=False, forward_only=False,
@@ -19,6 +24,16 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     deterministic = False
 
     assert head_dim % 8 == 0
+
+    try:
+        check_flash_attn(batch_size, seqlen, num_heads, head_dim, causal, device, dtype)
+    except Exception as e:
+        print('--------------------------------------------------------------------------------')
+        print('Exceptions raised during correctness check:'                                     )
+        print(e)
+        print('--------------------------------------------------------------------------------')
+
+    torch.cuda.empty_cache()
 
     forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
     q = torch.randn(

@@ -5,12 +5,17 @@
 import math
 import pandas as pd
 import pickle
+import sys
 import torch
 import torch.nn.functional as F
 
 from einops import rearrange
 from flash_attn.utils.benchmark import benchmark_fwd_bwd
 from flash_attn import flash_attn_qkvpacked_func
+
+parent_dir = ".."
+sys.path.append(parent_dir)
+from reference_attn import check_flash_attn_qkvpacked
 
 try:
     from triton.ops.flash_attention import attention as attention_triton
@@ -92,6 +97,15 @@ for causal in causal_vals:
         config = (causal, batch_size, seqlen, nheads, headdim)
         qkv = torch.randn(batch_size, seqlen, 3, nheads, headdim, device=device, dtype=dtype,
                           requires_grad=True)
+        try:
+            check_flash_attn_qkvpacked(batch_size, seqlen, nheads, headdim, causal)
+        except Exception as e:
+            print('--------------------------------------------------------------------------------')
+            print('Exceptions raised during correctness check:'                                     )
+            print(e)
+            print('--------------------------------------------------------------------------------')
+
+        torch.cuda.empty_cache()
 
         f, b = time_fwd_bwd(
             flash_attn_qkvpacked_func, qkv, dropout_p, causal=causal, repeats=repeats, verbose=False

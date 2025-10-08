@@ -1,3 +1,4 @@
+import sys
 import time
 import torch
 import torch.nn.functional as F
@@ -12,6 +13,11 @@ try:
     flex_attention = torch.compile(flex_attention)
 except Exception as e:
     print("torch.compile(flex_attention) failed or not necessary:", e)
+
+parent_dir = ".."
+sys.path.append(parent_dir)
+from reference_attn import check_torch_flexattn 
+
 
 def causal_mask(b, h, q_idx, kv_idx):
     return q_idx >= kv_idx
@@ -37,6 +43,16 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     torch.cuda.set_device(device)
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
+
+    try:
+        check_torch_flexattn(batch_size, seqlen, num_heads, head_dim, True, device, dtype)
+    except Exception as e:
+        print('--------------------------------------------------------------------------------')
+        print('Exceptions raised during correctness check:'                                     )
+        print(e)
+        print('--------------------------------------------------------------------------------')
+    
+    torch.cuda.empty_cache()
 
     forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
     torch.manual_seed(0)

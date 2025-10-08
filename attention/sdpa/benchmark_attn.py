@@ -1,8 +1,13 @@
 import os
 import torch
+import sys
 from torch.nn.attention import SDPBackend, sdpa_kernel
 import torch.nn.functional as F
 import argparse, importlib
+
+parent_dir = ".."
+sys.path.append(parent_dir)
+from reference_attn import check_torch_sdpa 
 
 
 def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
@@ -24,6 +29,16 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     sdpa_backend = SDPBackend(backend)
 
     assert head_dim % 8 == 0
+
+    try:
+        check_torch_sdpa(batch_size, seqlen, num_heads, head_dim, is_causal, sdpa_backend, device, dtype)
+    except Exception as e:
+        print('--------------------------------------------------------------------------------')
+        print('Exceptions raised during correctness check:'                                     )
+        print(e)
+        print('--------------------------------------------------------------------------------')
+
+    torch.cuda.empty_cache()
 
     forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
     q = torch.randn(
