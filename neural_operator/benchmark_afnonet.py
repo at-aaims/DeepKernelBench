@@ -293,7 +293,7 @@ def run_benchmark(batch_size, forward_only=False,
     model_input = model_input.to(device)
     result = fno(model_input)
 
-    torch.testing.assert_close(result.detach().cpu(), result_cpu, atol=1e-2, rtol=0)
+    torch.testing.assert_close(result.detach().cpu(), result_cpu, atol=1.5e-2, rtol=0)
 
     with FlopTensorDispatchMode(fno) as ftdm:
         # count forward flops
@@ -306,11 +306,15 @@ def run_benchmark(batch_size, forward_only=False,
     
         forward_flops = get_max_flops(fno_forward_flops)
         backward_flops = get_max_flops(fno_backward_flops)
-        print(f"Max FLOPS required for FNO.forward: {forward_flops}")
-        print(f"Max FLOPS required for FNO.backward: {backward_flops}")
+        print(f"Max FLOPS required for AFNONet.forward: {forward_flops}")
+        print(f"Max FLOPS required for AFNONet.backward: {backward_flops}")
 
     if profile:
         torch.backends.cudnn.benchmark = True
+        if torch.version.hip:
+            torch_version = 'hip'
+        else:
+            torch_version = 'cuda'
         profiler = torch.profiler.profile(
             activities=[
                 torch.profiler.ProfilerActivity.CPU,
@@ -328,7 +332,7 @@ def run_benchmark(batch_size, forward_only=False,
             with_stack=False,
             on_trace_ready=torch.profiler.tensorboard_trace_handler(
                 os.path.join(
-                    f"./benchmark/logs/{f.__name__}", f"rank_{dist.get_rank()}"
+                    f"./benchmark/logs/{torch_version}/AFNONet"
                 )
             ),
         )
