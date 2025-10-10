@@ -253,7 +253,7 @@ def check_torch_flexattn(b, s, h, d, causal, device='cuda:0', dtype=torch.bfloat
         causal_mask, B=None, H=None, Q_LEN=s, KV_LEN=s, device=device, _compile=True
     )
 
-    fa_out = flex_attention(q2, k2, v2, block_mask=block_mask)
+    fa_out = torch.compile(flex_attention)(q2, k2, v2, block_mask=block_mask)
     fa_dout = torch.randn_like(fa_out)
     fa_out.backward(fa_dout)
     # compare
