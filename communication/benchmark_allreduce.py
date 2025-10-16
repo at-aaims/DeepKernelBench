@@ -13,9 +13,21 @@ import pandas as pd
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--multiplier", type=int, default=2)
+parser.add_argument("-r", "--reduce_op", type=int, default=0)
 
 args = parser.parse_args()
 multiplier = args.multiplier
+reduce_op = args.reduce_op
+
+if reduce_op == 1:
+  op = dist.ReduceOp.MIN
+  op_name = "MIN"
+elif reduce_op == 2:
+  op = dist.ReduceOp.MAX
+  op_name = "MAX"
+else:
+  op = dist.ReduceOp.SUM
+  op_name = "SUM"
 
 local_rank = int(os.environ["LOCAL_RANK"])
 rank = int(os.environ["RANK"])
@@ -28,6 +40,7 @@ dist.init_process_group("nccl")
 if rank == 0:
     print("NCCL version : ", torch.cuda.nccl.version(), file=sys.stderr)
     print("World size   : ", world_size) 
+    print("Reduce Operator: ", op_name)
 
 torch.manual_seed(1235911);
 
@@ -57,9 +70,11 @@ for nMB in [0.10,0.12,0.15,0.20,0.32,0.40,0.50,0.64,0.80,1.00,1.25,1.50,2.00,3.1
     npts = int(nMB*1.0e6/4.0)
     nm1 = int(npts - 1)
 
+    args
+
     # launch warmup calls
     for i in range(2):
-        dist.all_reduce(Tensor[0:nm1], op=dist.ReduceOp.SUM)
+        dist.all_reduce(Tensor[0:nm1], op=op)
         torch.cuda.synchronize()
 
     tbeg = time.perf_counter()
@@ -68,7 +83,7 @@ for nMB in [0.10,0.12,0.15,0.20,0.32,0.40,0.50,0.64,0.80,1.00,1.25,1.50,2.00,3.1
     tmax = 0.0
 
     for i in range(maxiter):
-        dist.all_reduce(Tensor[0:nm1], op=dist.ReduceOp.SUM)
+        dist.all_reduce(Tensor[0:nm1], op=op)
         torch.cuda.synchronize()
         t2 = time.perf_counter()
         if (t2 - t1) < tmin:
@@ -96,7 +111,7 @@ dist.destroy_process_group()
 
 if rank == 0:
     device_name = torch.cuda.get_device_name(0).replace(' ', '_')
-    save_file = f"benchmark_allreduce_{device_name}.csv"
+    save_file = f"benchmark_allreduce_{op_name}_{device_name}.csv"
     headers = ["size(MB)", "tavg(usec)", "tmin(usec)", "tmax(usec)", "avgbw(GB/sec)", "maxbw(GB/sec)", "minbw(GB/sec)"]
     df = pd.DataFrame.from_records(results, columns=headers)
     df.to_csv(save_file)
