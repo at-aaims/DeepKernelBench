@@ -28,14 +28,15 @@ def call_flex(q, k, v, block_mask):
 def call_sdpa(q, k, v):
     return F.scaled_dot_product_attention(q, k, v, is_causal=True)
 
-def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
-    s = seqlen * ngpus
-    h = num_heads * head_dim
-    return 4 * batch_size * s**2 * h
+def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
+    assert mode in ["fwd", "bwd", "fwd_bwd"]
+    s = ngpus * seqlen 
+    f = 4 * batch * s**2 * nheads * headdim // (2 if causal else 1)
+    return f if mode == "fwd" else (2.5 * f if mode == "bwd" else 3.5 * f)
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
                   fn=call_flex, forward_only=False, use_block_mask=False,
-                  warmup_iter=10, num_iter=100,
+                  warmup_iter=100, num_iter=200,
                   log=True, profile=False):
     dtype = torch.bfloat16
     device = torch.device(f"cuda:0")
@@ -54,7 +55,6 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     
     torch.cuda.empty_cache()
 
-    forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
     torch.manual_seed(0)
 
     q = torch.randn(
@@ -99,12 +99,42 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         device=device, _compile=True
     )
 
-    torch.cuda.synchronize()
+    if profile:
+        torch.backends.cudnn.benchmark = True
+        if torch.version.hip:
+            torch_version = 'hip'
+        else:
+            torch_version = 'cuda'
+        profiler = torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=torch.profiler.schedule(
+                wait=2,
+                warmup=3,
+                active=5,
+            ),
+            record_shapes=True,
+            profile_memory=True,
+            with_flops=True,
+            with_modules=True,
+            with_stack=False,
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                os.path.join(
+                    f"./benchmark/logs/{torch_version}/flex"
+                )
+            ),
+        )
 
     for i in range(warmup_iter):
         out = fn(q, k, v, block_mask) if use_block_mask else fn(q, k, v)
         out.backward(dout)
+
     torch.cuda.synchronize()
+
+    if profile:
+        profiler.start()
 
     begin = torch.cuda.Event(enable_timing=True)
     begin.record()
@@ -113,6 +143,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         with torch.no_grad():
             for _ in range(num_iter):
                 _ = fn(q, k, v, block_mask) if use_block_mask else fn(q, k, v)
+                if profile:
+                    profiler.step()
     else:
         for _ in range(num_iter):
             q.grad = None
@@ -120,6 +152,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
             v.grad = None
             out = fn(q, k, v, block_mask) if use_block_mask else fn(q, k, v)
             out.backward(dout)
+            if profile:
+                profiler.step()
 
     end = torch.cuda.Event(enable_timing=True)
     end.record()
@@ -127,10 +161,14 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     time = begin.elapsed_time(end) / 1000.0
     avg_time = time/num_iter
 
+    if profile:
+        profiler.stop()
+
     if forward_only:
-        tflops = forward_flops/avg_time/1e12
+        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, True, 'fwd')
     else:
-        tflops = 3*forward_flops/avg_time/1e12
+        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, True, 'fwd_bwd')
+    tflops = flops / avg_time / 1e12 
 
     peak_mem_gb = None
     peak_bytes = torch.cuda.max_memory_allocated(device)
@@ -155,12 +193,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Parse model configuration arguments.")
 
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training or inference.")
-    parser.add_argument("--seq_length", type=int, default=128, help="Sequence length for input data.")
-    parser.add_argument("--num_heads", type=int, default=8, help="Number of attention heads.")
+    parser.add_argument("--batch_size", type=int, default=1, help="Batch size for training or inference.")
+    parser.add_argument("--seq_length", type=int, default=16384, help="Sequence length for input data.")
+    parser.add_argument("--num_heads", type=int, default=6, help="Number of attention heads.")
     parser.add_argument("--head_dim", type=int, default=64, help="Dimension of each attention head.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
-    parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
+    parser.add_argument("--num_iter", type=int, default=100, help="Number of iterations.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
 
     args = parser.parse_args()
