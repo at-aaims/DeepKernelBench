@@ -1,12 +1,12 @@
 import os
 import sys
 import torch
-from flash_attn import flash_attn_func
+from flash_attn import flash_attn_qkvpacked_func
 import argparse, importlib
 
 parent_dir = ".."
 sys.path.append(parent_dir)
-from reference_attn import check_flash_attn 
+from reference_attn import check_flash_attn_qkvpacked
 
 def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
     assert mode in ["fwd", "bwd", "fwd_bwd"]
@@ -17,7 +17,7 @@ def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
                   causal=False, forward_only=False,
-                  f=flash_attn_func, warmup_iter=100, num_iter=200,
+                  f=flash_attn_qkvpacked_func, warmup_iter=100, num_iter=200,
                   log=True, profile=False):
     dtype = torch.bfloat16
     device = torch.device(f"cuda:0")
@@ -27,43 +27,17 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     assert head_dim % 8 == 0
 
     try:
-        check_flash_attn(batch_size, seqlen, num_heads, head_dim, causal, device, dtype)
+        check_flash_attn_qkvpacked(batch_size, seqlen, num_heads, head_dim, causal)
     except Exception as e:
         print('--------------------------------------------------------------------------------')
         print('Exceptions raised during correctness check:'                                     )
         print(e)
         print('--------------------------------------------------------------------------------')
-
     torch.cuda.empty_cache()
 
-    q = torch.randn(
-        batch_size,
-        seqlen,
-        num_heads,
-        head_dim,
-        device=device,
-        dtype=dtype,
-        requires_grad=True,
-    )
-    k = torch.randn(
-        batch_size,
-        seqlen,
-        num_heads,
-        head_dim,
-        device=device,
-        dtype=dtype,
-        requires_grad=True,
-    )
-    v = torch.randn(
-        batch_size,
-        seqlen,
-        num_heads,
-        head_dim,
-        device=device,
-        dtype=dtype,
-        requires_grad=True,
-    )
- 
+    qkv = torch.randn(batch_size, seqlen, 3, num_heads, head_dim, device=device, dtype=dtype,
+                      requires_grad=True)
+
     dout = torch.randn(
         batch_size, seqlen, num_heads, head_dim, device=device, dtype=dtype
     )
@@ -94,13 +68,9 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
 
 
     for _ in range(warmup_iter):
-        q.grad = None
-        k.grad = None
-        v.grad = None
+        qkv.grad = None
         out = f(
-            q,
-            k,
-            v,
+            qkv,
             causal=causal,
             window_size=(-1, -1),
             alibi_slopes=None,
@@ -121,9 +91,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         with torch.no_grad():
             for _ in range(num_iter):
                 _ = f(
-                    q,
-                    k,
-                    v,
+                    qkv,
                     causal=causal,
                     window_size=(-1, -1),
                     alibi_slopes=None,
@@ -135,13 +103,9 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
 
     else:
         for _ in range(num_iter):
-            q.grad = None
-            k.grad = None
-            v.grad = None
+            qkv.grad = None
             out = f(
-                q,
-                k,
-                v,
+                qkv,
                 causal=causal,
                 window_size=(-1, -1),
                 alibi_slopes=None,
@@ -194,7 +158,7 @@ if __name__ == "__main__":
     profile = args.profile
 
     for f in [
-        flash_attn_func,
+        flash_attn_qkvpacked_func,
     ]:
         torch.cuda.empty_cache()
         #if rank == 0:
