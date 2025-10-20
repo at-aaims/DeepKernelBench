@@ -1,13 +1,8 @@
 ## Attention operators
-### Benchmark attention operations
-```
-python driver.py --bench-script attn.benchmark_attn --csv-file attn/shapes.csv
-```
-
 ### Benchmark Flash attention2 operations
 ```
-cd attn2
-python benchmark_attn.py
+python driver.py --bench-script attn.benchmark_attn --csv-file attn/shapes.csv
+python driver.py --bench-script attn.benchmark_attn2 --csv-file attn/shapes.csv
 ```
 
 ### Benchmark Torch scaled dot product attention operations
