@@ -9,10 +9,11 @@ sys.path.append(parent_dir)
 from reference_attn import check_torch_sdpa 
 
 
-def get_flops(batch_size, seqlen, ngpus, num_heads, head_dim):
-    s = seqlen * ngpus
-    h = num_heads * head_dim
-    return 4 * batch_size * s**2 * h
+def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
+    assert mode in ["fwd", "bwd", "fwd_bwd"]
+    s = ngpus * seqlen 
+    f = 4 * batch * s**2 * nheads * headdim // (2 if causal else 1)
+    return f if mode == "fwd" else (2.5 * f if mode == "bwd" else 3.5 * f)
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                   causal=True, forward_only=True,
@@ -39,7 +40,6 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
 
     torch.xpu.empty_cache()
 
-    forward_flops = get_flops(batch_size, seqlen, 1, num_heads, head_dim)
     q = torch.randn(
         batch_size,
         num_heads,
@@ -127,6 +127,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
           )
         out.backward(dout)
 
+    torch.xpu.synchronize(device=device)
+
     if profile:
         profiler.start()
 
@@ -168,13 +170,15 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     end.record()
     torch.xpu.synchronize(device=device)
     time = begin.elapsed_time(end) / 1000.0
-    if forward_only:
-        TFLOPS = forward_flops/(time/num_iter)/1e12
-    else:
-        TFLOPS = 3*forward_flops/(time/num_iter)/1e12
 
     if profile:
         profiler.stop()
+
+    if forward_only:
+        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, is_causal, 'fwd')
+    else:
+        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, is_causal, 'fwd_bwd')
+    TFLOPS = flops / (time/num_iter) / 1e12 
 
     print(f"{num_iter / time:.6f} iter/s, {time:.3f} sec, {TFLOPS:.1f} TFLOPS")
     return TFLOPS
@@ -187,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument("--seq_length", type=int, default=128, help="Sequence length for input data.")
     parser.add_argument("--num_heads", type=int, default=8, help="Number of attention heads.")
     parser.add_argument("--head_dim", type=int, default=64, help="Dimension of each attention head.")
-    parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
+    parser.add_argument("--num_iter", type=int, default=100, help="Number of iterations.")
     parser.add_argument("--causal", action='store_true', help="Enable causal attention masking.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
