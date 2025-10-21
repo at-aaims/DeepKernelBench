@@ -1,14 +1,12 @@
 # Reference
-# https://github.com/Dao-AILab/flash-attention/benchmarks/benchmark_attn.py
 # https://github.com/tile-ai/tilelang-benchmark/blob/main/hopper_benchmark/flashattention/2.triton_benchmark/benchmark_triton_mha.py
 #
+import argparse, importlib
 import math
 import pandas as pd
 import pickle
 import torch
 from einops import rearrange
-from flash_attn.utils.benchmark import benchmark_fwd_bwd
-from flash_attn import flash_attn_qkvpacked_func
 
 import triton
 import triton.language as tl
@@ -30,6 +28,8 @@ def is_cuda():
 def supports_tma():
     return HAS_TENSOR_DESC and is_cuda() and torch.cuda.get_device_capability()[0] >= 9
 
+triton_dtype = tl.bfloat16
+#triton_dtype = tl.float16
 
 @triton.jit
 def _attn_fwd_inner(acc, l_i, m_i, q,  #
@@ -75,7 +75,7 @@ def _attn_fwd_inner(acc, l_i, m_i, q,  #
         if fp8_v:
             p = p.to(tl.float8e5)
         else:
-            p = p.to(tl.float16)
+            p = p.to(triton_dtype)
         acc = tl.dot(p, v, acc)
         # update m_i and l_i
         m_i = m_ij
@@ -288,7 +288,7 @@ def _attn_fwd_tma(sm_scale, M,  #
                   STAGE: tl.constexpr,  #
                   warp_specialize: tl.constexpr,  #
                   ):
-    dtype = tl.float8e5 if FP8_OUTPUT else tl.float16
+    dtype = tl.float8e5 if FP8_OUTPUT else triton_dtype
     tl.static_assert(BLOCK_N <= HEAD_DIM)
     start_m = tl.program_id(0)
     off_hz = tl.program_id(1)
@@ -391,14 +391,14 @@ def _attn_bwd_dkdv(dk, dv,  #
         do = tl.load(do_ptrs)
         # Compute dV.
         ppT = pT
-        ppT = ppT.to(tl.float16)
+        ppT = ppT.to(triton_dtype)
         dv += tl.dot(ppT, do)
         # D (= delta) is pre-divided by ds_scale.
         Di = tl.load(D + offs_m)
         # Compute dP and dS.
         dpT = tl.dot(v, tl.trans(do)).to(tl.float32)
         dsT = pT * (dpT - Di[None, :])
-        dsT = dsT.to(tl.float16)
+        dsT = dsT.to(triton_dtype)
         dk += tl.dot(dsT, tl.trans(qT))
         # Increment pointers.
         curr_m += step_m
@@ -444,7 +444,7 @@ def _attn_bwd_dq(dq, q, K, V,  #
         # Compute dP and dS.
         dp = tl.dot(do, vT).to(tl.float32)
         ds = p * (dp - Di[:, None])
-        ds = ds.to(tl.float16)
+        ds = ds.to(triton_dtype)
         # Compute dQ.
         # NOTE: We need to de-scale dq in the end, because kT was pre-scaled.
         dq += tl.dot(ds, tl.trans(kT))
@@ -695,9 +695,10 @@ class _attention(torch.autograd.Function):
 
 attention_triton = _attention.apply
 
-def flops(batch, seqlen, headdim, nheads, causal, mode="fwd"):
+def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
     assert mode in ["fwd", "bwd", "fwd_bwd"]
-    f = 4 * batch * seqlen**2 * nheads * headdim // (2 if causal else 1)
+    s = ngpus * seqlen 
+    f = 4 * batch * s**2 * nheads * headdim // (2 if causal else 1)
     return f if mode == "fwd" else (2.5 * f if mode == "bwd" else 3.5 * f)
 
 def efficiency(flop, time):
@@ -711,9 +712,13 @@ def time_fwd_bwd(func, *args, **kwargs):
 
 repeats = 200
 device = 'cuda'
-dtype = torch.float16
 
-def check_attention(B, H, N_CTX, HEAD_DIM, causal, dtype=torch.float16):
+if triton_dtype == tl.bfloat16:
+   dtype = torch.bfloat16
+else:
+   dtype = torch.float16
+
+def check_attention(B, H, N_CTX, HEAD_DIM, causal, dtype):
     torch.manual_seed(20)
     q = (torch.empty((B, H, N_CTX, HEAD_DIM), dtype=dtype, device=device).normal_(mean=0.0, std=0.5).requires_grad_())
     k = (torch.empty((B, H, N_CTX, HEAD_DIM), dtype=dtype, device=device).normal_(mean=0.0, std=0.5).requires_grad_())
@@ -725,15 +730,14 @@ def check_attention(B, H, N_CTX, HEAD_DIM, causal, dtype=torch.float16):
     p = torch.matmul(q, k.transpose(2, 3)) * sm_scale
     if causal:
         p[:, :, M == 0] = float("-inf")
-    p = torch.softmax(p.float(), dim=-1).half()
-    # p = torch.exp(p)
+    p = torch.softmax(p.float(), dim=-1).to(dtype)
     ref_out = torch.matmul(p, v)
     ref_out.backward(dout)
     ref_dv, v.grad = v.grad.clone(), None
     ref_dk, k.grad = k.grad.clone(), None
     ref_dq, q.grad = q.grad.clone(), None
     # triton implementation
-    tri_out = attention_triton(q, k, v, causal, sm_scale).half()
+    tri_out = attention_triton(q, k, v, causal, sm_scale).to(dtype)
     tri_out.backward(dout)
     tri_dv, v.grad = v.grad.clone(), None
     tri_dk, k.grad = k.grad.clone(), None
@@ -750,115 +754,139 @@ def check_attention(B, H, N_CTX, HEAD_DIM, causal, dtype=torch.float16):
     torch.testing.assert_close(ref_dq, tri_dq, atol=1e-2, rtol=rtol)
 
 
-causal_vals = [True]
+def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
+                  causal=False, forward_only=False,
+                  f=attention_triton, warmup_iter=1000, num_iter=1000,
+                  log=True, profile=False):
 
-# batch, seqlen, nheads, head_dim
-vals = [(1, 65536, 3, 64),
-        (1, 16384, 6, 64),
-        (1, 8192, 15, 64),
-        (1, 4096, 24, 128),
-        (1, 2048, 32, 128),
-        (1, 2048, 8, 128),
-        (1, 2048, 16, 64)]
+    dtype = torch.bfloat16
+    device = torch.device(f"cuda:0")
+    torch.cuda.set_device(device)
 
-dropout_p = 0.0
+    # check correctness of Triton attention
+    try:
+        check_attention(batch_size, num_heads, seqlen, head_dim, causal, dtype=dtype)
+    except Exception as e:
+        print('--------------------------------------------------------------------------------')
+        print('Exceptions raised during correctness check:'                                     )
+        print(e)
+        print('--------------------------------------------------------------------------------')
+        
+    torch.cuda.empty_cache()
 
-methods = (["Flash2"] + (["Triton"] if attention_triton is not None else []))
+    q, k, v = [torch.randn(batch_size, num_heads, seqlen, head_dim, device=device, dtype=dtype,
+               requires_grad=True) for _ in range(3)]
 
-results = []
-time_f = {}
-time_b = {}
-time_f_b = {}
-speed_f = {}
-speed_b = {}
-speed_f_b = {}
-for causal in causal_vals:
-    for batch_size, seqlen, nheads, headdim in vals:
-        config = (causal, batch_size, seqlen, nheads, headdim)
-        qkv = torch.randn(batch_size, seqlen, 3, nheads, headdim, device=device, dtype=dtype, requires_grad=True)
-        f, b = time_fwd_bwd(
-            flash_attn_qkvpacked_func, qkv, dropout_p, causal=causal, repeats=repeats, verbose=False
+    dout = torch.randn(
+        batch_size, num_heads, seqlen, head_dim, device=device, dtype=dtype
+    )
+
+    sm_scale = head_dim ** (-0.5)
+
+    if profile:
+        torch.backends.cudnn.benchmark = True
+        profiler = torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=torch.profiler.schedule(
+                wait=2,
+                warmup=3,
+                active=5,
+            ),
+            record_shapes=True,
+            profile_memory=True,
+            with_flops=True,
+            with_modules=True,
+            with_stack=False,
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                os.path.join(
+                    f"./benchmark/logs/{f.__name__}", f"rank_{dist.get_rank()}"
+                )
+            ),
         )
-        time_f[config, "Flash2"] = f
-        time_b[config, "Flash2"] = b
 
-        del qkv
+    for _ in range(warmup_iter):
+        q.grad = None
+        k.grad = None
+        v.grad = None
+        out = f(q, k, v, causal, sm_scale)
+        out.backward(dout)
+
+    torch.cuda.synchronize(device=device)
+
+    if profile:
+        profiler.start()
+
+    begin = torch.cuda.Event(enable_timing=True)
+    begin.record()
+
+    if forward_only:
+        with torch.no_grad():
+            for _ in range(num_iter):
+                _ = f(q, k, v, causal, sm_scale)
+                if profile:
+                    profiler.step()
+
+    else:
+        for _ in range(num_iter):
+            q.grad = None
+            k.grad = None
+            v.grad = None
+            out = f(q, k, v, causal, sm_scale)
+            out.backward(dout)
+            if profile:
+                profiler.step()
+
+    end = torch.cuda.Event(enable_timing=True)
+    end.record()
+    torch.cuda.synchronize(device=device)
+    time = begin.elapsed_time(end) / 1000.0
+
+    if profile:
+        profiler.stop()
+
+    if forward_only:
+        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, causal, 'fwd')
+    else:
+        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, causal, 'fwd_bwd')
+
+    TFLOPS = flops / (time/num_iter) / 1e12 
+
+    print(f"{num_iter / time:.6f} iter/s, {time:.3f} sec, {TFLOPS:.1f} TFLOPS")
+    return TFLOPS
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Parse model configuration arguments.")
+
+    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training or inference.")
+    parser.add_argument("--seq_length", type=int, default=128, help="Sequence length for input data.")
+    parser.add_argument("--num_heads", type=int, default=8, help="Number of attention heads.")
+    parser.add_argument("--head_dim", type=int, default=64, help="Dimension of each attention head.")
+    parser.add_argument("--causal", action='store_true', help="Enable causal attention masking.")
+    parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
+    parser.add_argument("--num_iter", type=int, default=100, help="Number of iterations.")
+    parser.add_argument("--profile", action='store_true', help="Enable profiling.")
+
+    args = parser.parse_args()
+    batch_size = args.batch_size
+    seq_length = args.seq_length
+    num_heads = args.num_heads
+    head_dim = args.head_dim
+    num_iter = args.num_iter
+    causal = args.causal
+    forward_only = args.forward_only
+    profile = args.profile
+
+    for f in [
+        attention_triton,
+    ]:
         torch.cuda.empty_cache()
-
-        q, k, v = [torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype,
-                   requires_grad=True) for _ in range(3)]
-
-        # check correctness of Triton attention
-        try:
-            check_attention(batch_size, nheads, seqlen, headdim, causal, dtype=dtype)
-        except Exception as e:
-            print(e)
-            
-        try:
-            f, b = time_fwd_bwd(
-                attention_triton, q, k, v, causal, headdim**(-0.5), True,
-                repeats=repeats, verbose=False
-            )
-        except:
-            f, b = float('nan'), float('inf')
-
-        try:
-            _, b0 = time_fwd_bwd(
-                attention_triton, q, k, v, causal, headdim**(-0.5), True,
-                repeats=repeats, verbose=False
-            )
-        except:
-            b0 = float('inf')
-
-        time_f[config, "Triton"] = f
-        time_b[config, "Triton"] = min(b, b0) if min(b, b0) < float('inf') else float('nan')
-
-        del q
-        del k
-        del v
-        torch.cuda.empty_cache()
-
-        print(f"### causal={causal}, batch_size={batch_size}, seqlen={seqlen}, nheads={nheads}, headdim={headdim}, ###")
-        for method in methods:
-            time_f_b[config, method] = time_f[config, method] + time_b[config, method]
-            speed_f[config, method] = efficiency(
-                flops(batch_size, seqlen, headdim, nheads, causal, mode="fwd"),
-                time_f[config, method]
-            )
-            speed_b[config, method] = efficiency(
-                flops(batch_size, seqlen, headdim, nheads, causal, mode="bwd"),
-                time_b[config, method]
-            )
-            speed_f_b[config, method] = efficiency(
-                flops(batch_size, seqlen, headdim, nheads, causal, mode="fwd_bwd"),
-                time_f_b[config, method]
-            )
-            print(
-                f"{method} fwd: {speed_f[config, method]:.2f} TFLOPs/s, "
-                f"bwd: {speed_b[config, method]:.2f} TFLOPs/s, "
-                f"fwd + bwd: {speed_f_b[config, method]:.2f} TFLOPs/s"
-            )
-            results.append([
-                f"{method}",
-                f"({batch_size}, {seqlen}, {nheads}, {headdim}, {causal})",
-                f"{speed_f[config,method]:.1f} TFLOPS",
-                f"{speed_b[config,method]:.1f} TFLOPS",
-                f"{speed_f_b[config,method]:.1f} TFLOPS"
-            ])
-
-headers = [
-    "method",
-    "config",
-    "fwd(float16)",
-    "bwd(float16)",
-    "fwd+bwd(float16)"
-]
-
-device_name = torch.cuda.get_device_name(0).replace(' ', '_')
-save_file = f"benchmark_attn_{device_name}_results.csv"
-df = pd.DataFrame.from_records(results, columns=headers)
-df.to_csv(save_file)
-print(f"Saved results to {save_file}")
-
-# with open('flash2_attn_time.plk', 'wb') as fp:
-#     pickle.dump((speed_f, speed_b, speed_f_b), fp, protocol=pickle.HIGHEST_PROTOCOL)
+        run_benchmark(
+           batch_size, seq_length, num_heads, head_dim,
+           causal, forward_only,
+           f, num_iter=num_iter,
+           log=True, profile=profile
+        )

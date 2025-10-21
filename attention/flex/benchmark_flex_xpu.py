@@ -35,7 +35,7 @@ def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                   fn=call_flex, forward_only=False, use_block_mask=False,
-                  warmup_iter=30, num_iter=200,
+                  warmup_iter=1000, num_iter=1000,
                   log=True, profile=False):
     dtype = torch.bfloat16
     device = torch.device(f"xpu:0")
@@ -97,8 +97,6 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         causal_mask, B=None, H=None, Q_LEN=seqlen, KV_LEN=seqlen,
         device=device, _compile=True
     )
-
-    torch.xpu.synchronize()
 
     for i in range(warmup_iter):
         out = fn(q, k, v, block_mask) if use_block_mask else fn(q, k, v)

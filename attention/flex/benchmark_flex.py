@@ -36,7 +36,7 @@ def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
 
 def run_benchmark(batch_size, seqlen, num_heads, head_dim, 
                   fn=call_flex, forward_only=False, use_block_mask=False,
-                  warmup_iter=100, num_iter=200,
+                  warmup_iter=1000, num_iter=1000,
                   log=True, profile=False):
     dtype = torch.bfloat16
     device = torch.device(f"cuda:0")

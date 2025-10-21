@@ -17,6 +17,5 @@ python driver.py --bench-script flex.benchmark_flex --csv-file flex/shapes.csv
 
 ### Benchmark Triton attention operations
 ```
-cd triton
-python benchmark_attn_triton.py
+python driver.py --bench-script attn_triton.benchmark_attn --csv-file attn/shapes.csv
 ```

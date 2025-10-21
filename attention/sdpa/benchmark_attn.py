@@ -20,7 +20,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                   causal=True, forward_only=True,
                   f=F.scaled_dot_product_attention,
                   backend=SDPBackend.FLASH_ATTENTION,
-                  warmup_iter=30, num_iter=200,
+                  warmup_iter=1000, num_iter=1000,
                   log=True, profile=False):
     is_causal = bool(causal)
     dtype = torch.bfloat16
