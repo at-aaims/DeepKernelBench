@@ -50,8 +50,9 @@ def main() -> None:
 
     if args.save:
         device_name = torch.cuda.get_device_name(0).replace(' ', '_')
+        input_csv = str(args.csv_file).replace('/', '_')
         df = pd.DataFrame.from_records(tuple(results.values()))
-        save_file = f"{args.bench_script}_{device_name}.csv"
+        save_file = f"{args.bench_script}_{device_name}_{input_csv}"
         df.to_csv(save_file)
         print(f"Saved results to {save_file}")
 
