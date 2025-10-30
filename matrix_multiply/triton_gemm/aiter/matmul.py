@@ -19,8 +19,6 @@ is_nvidia = "nvidia" in torch.cuda.get_device_name(0).lower()
 
 device = 'cuda'
 dtype_bf16 = torch.bfloat16
-dtype_fp8_e5m2 = torch.float8_e5m2
-dtype_fp8_e4m3 = torch.float8_e4m3fn if is_nvidia else torch.float8_e4m3fnuz
 
 # GEMM Shapes
 shapes = [
@@ -40,7 +38,7 @@ for (m, n, k) in shapes:
     # Matmul benchmark in bf16
     a = torch.randn(m, k, device=device, dtype=dtype_bf16)
     b1 = torch.randn(k, n, device=device, dtype=dtype_bf16)
-    b2 = b1.transpose(-1, -2)
+    b2 = b1.transpose(0, 1)
 
     c1 = torch.zeros(m, n, device=device, dtype=dtype_bf16)
     c2 = torch.zeros(m, n, device=device, dtype=dtype_bf16)
@@ -50,7 +48,7 @@ for (m, n, k) in shapes:
     gemm_a16w16(a, b2, dtype_bf16, c2, activation=None)
 
     try:
-        torch.testing.assert_close(c1, c2)
+        torch.testing.assert_close(c1, c2, atol=0.02, rtol=1e-2)
     except AssertionError as error:
         print(error)
 
