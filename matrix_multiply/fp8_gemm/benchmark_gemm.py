@@ -24,7 +24,9 @@ def to_float8(x, dtype=torch.float8_e4m3fn):
 def scaled_mm_supported_device():
     if torch.cuda.is_available():
         if torch.version.hip:
-            return 'gfx94' in torch.cuda.get_device_properties(0).gcnArchName
+            supported_architectures = ['gfx94', 'gfx95']
+            gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
+            return any(arch in gcn_arch for arch in supported_architectures)
         else:
             return torch.cuda.get_device_capability() >= (9, 0) or torch.cuda.get_device_capability() == (8, 9)
     return False
@@ -46,7 +48,7 @@ def run_benchmark(m, k, n, a_type='float8_e4m3',
     assert k > 0
     assert n > 0
 
-    if torch.version.hip and 'gfx94' in torch.cuda.get_device_properties(0).gcnArchName:
+    if torch.version.hip:
         e4m3_type = torch.float8_e4m3fnuz
         e5m2_type = torch.float8_e5m2fnuz
     else:
