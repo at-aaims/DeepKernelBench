@@ -13,13 +13,14 @@ python driver.py --help
 ```
 
 ## Run benchmarks
-README files in attention, geometrics, matrix_multiply, neural_operator provide the commands to run the benchmarks.
+The README files in sub-directories provide the commands to run the benchmarks.
 
 ## Support matrix
 | Benchmark name | Intel Max1100 | AMD MI250X | AMD MI300A | NVIDIA H100 |
 |---|---|---|---|---|
-| att  | ❌ | ✅ |✅ | ✅ |
-| att2 | ❌| ✅ |✅ | ✅ |
+| attn  | ❌ | ✅ |✅ | ✅ |
+| attn2 | ❌| ✅ |✅ | ✅ |
+| attn_triton | ✅ | ✅ |✅ | ✅ |
 | sdpa | limited| ✅ |✅ | ✅ |
 | flex | ❌ | ✅ |✅ | ✅ |
 | ao_float8 | ❌ |❌ |✅ | ✅ |
@@ -33,6 +34,8 @@ README files in attention, geometrics, matrix_multiply, neural_operator provide 
 | vllm | ❌ |❌ | ✅ |✅|
 | geometrics kernel | ✅ |✅ | ✅ |✅ |
 | neural_operators | ❌ | ✅ |✅ | ✅ |
+| tensor_ops | ✅ |✅ | ✅ |✅ |
+| communication | ✅ |✅ | ✅ |✅ |
 
 ## Reference
 ```
