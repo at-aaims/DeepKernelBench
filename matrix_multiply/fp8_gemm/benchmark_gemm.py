@@ -44,6 +44,7 @@ def run_benchmark(m, k, n, a_type='float8_e4m3',
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
 
+    assert forward_only
     assert m > 0
     assert k > 0
     assert n > 0
@@ -123,10 +124,9 @@ def run_benchmark(m, k, n, a_type='float8_e4m3',
             scale_b=b_inv_s,
             use_fast_accum=bool(fast_accum)
         )
-        # RuntimeError: derivative for aten::_scaled_mm is not implemented
-        # out.backward(dout)
+        if not forward_only:
+            out.backward(dout)
 
-    # work around the runtime error
     if 'float8' in o_type:
         out = out.to(torch_dtypes['bfloat16'])
 
@@ -157,7 +157,6 @@ def run_benchmark(m, k, n, a_type='float8_e4m3',
                     profiler.step()
 
     else:
-        # RuntimeError: derivative for aten::_scaled_mm is not implemented
         for _ in range(num_iter):
             a.grad = None
             b.grad = None
@@ -205,7 +204,6 @@ if __name__ == "__main__":
     parser.add_argument("--fast_accum", action='store_true', help="Use fast accumulation.")
 
     parser.add_argument("--num_iter", type=int, default=10, help="Number of iterations.")
-    parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
     parser.add_argument("--profile", action='store_true', help="Enable profiling.")
     args = parser.parse_args()
 
@@ -215,7 +213,10 @@ if __name__ == "__main__":
     a_type = args.a_type
     b_type = args.b_type
     o_type = args.o_type
-    forward_only = args.forward_only
+
+    # RuntimeError: derivative for aten::_scaled_mm is not implemented
+    forward_only = True
+
     fast_accum = args.fast_accum
     profile = args.profile
     num_iter = args.num_iter
