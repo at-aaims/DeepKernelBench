@@ -35,6 +35,7 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | neural_operators | ❌ | ✅ |✅ | ✅ |
 | tensor_ops | ✅ |✅ | ✅ |✅ |
 | communication | ✅ |✅ | ✅ |✅ |
+| moe | ✅ |✅ | ✅ |✅ |
 
 ## Reference
 ```
