@@ -24,3 +24,8 @@ python driver.py --bench-script flex.benchmark_flex --csv-file flex/shapes.csv
 ```
 python driver.py --bench-script attn_triton.benchmark_attn --csv-file attn/shapes.csv
 ```
+
+### Benchmark AITER attention operations
+```
+python driver.py --bench-script attn_aiter.benchmark_attn --csv-file attn/shapes.csv
+```
