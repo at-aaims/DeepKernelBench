@@ -53,6 +53,8 @@ python matmul.py
 ### Benchmark the GEMM operations in AITER
 ```
 cd triton_gemm/aiter
+python matmul_fp4.py
+python matmul_fp8.py
 python matmul.py
 ```
 
