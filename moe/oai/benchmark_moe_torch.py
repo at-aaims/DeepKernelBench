@@ -99,8 +99,13 @@ def oai_moe_forward(
 def run_benchmark(num_token, tp,
                   warmup_iter=30, num_iter=200,
                   log=True, profile=False):
+
     device = torch.device(f"cuda:0")
     torch.cuda.set_device(device)
+
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats(device)
+
     dtype = torch.bfloat16
     M = num_token
     E = ModelConfig.num_experts
