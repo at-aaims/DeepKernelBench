@@ -19,7 +19,6 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | Benchmark name | Intel Max1100 | AMD MI250X | AMD MI300A | NVIDIA H100 |
 |---|---|---|---|---|
 | attn  | ❌ | ✅ |✅ | ✅ |
-| attn2 | ❌| ✅ |✅ | ✅ |
 | attn_triton | ✅ | ✅ |✅ | ✅ |
 | sdpa | limited| ✅ |✅ | ✅ |
 | flex | ❌ | ✅ |✅ | ✅ |
