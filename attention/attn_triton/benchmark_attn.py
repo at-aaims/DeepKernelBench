@@ -1,7 +1,7 @@
 # Reference
 # https://github.com/tile-ai/tilelang-benchmark/blob/main/hopper_benchmark/flashattention/2.triton_benchmark/benchmark_triton_mha.py
 #
-import argparse, importlib
+import argparse
 import math
 import pandas as pd
 import pickle

@@ -2,7 +2,7 @@ import sys
 import time
 import torch
 import torch.nn.functional as F
-import argparse, importlib
+import argparse
 
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 

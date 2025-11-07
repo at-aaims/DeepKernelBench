@@ -2,7 +2,7 @@ import os
 import sys
 import torch
 from flash_attn import flash_attn_qkvpacked_func
-import argparse, importlib
+import argparse
 
 parent_dir = ".."
 sys.path.append(parent_dir)
