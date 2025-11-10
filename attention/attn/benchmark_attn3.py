@@ -1,12 +1,8 @@
+import argparse
 import os
 import sys
 import torch
 from flash_attn_interface import flash_attn_func
-import argparse
-
-parent_dir = ".."
-sys.path.append(parent_dir)
-from reference_attn import check_flash_attn
 
 def get_flops(ngpus, batch, seqlen, nheads, headdim, causal, mode="fwd"):
     assert mode in ["fwd", "bwd", "fwd_bwd"]
@@ -27,7 +23,33 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
     assert head_dim % 8 == 0
 
     try:
-        check_flash_attn(batch_size, seqlen, num_heads, head_dim, causal, device, dtype)
+        b = batch_size
+        s = seqlen
+        h = num_heads
+        d = head_dim
+        torch.manual_seed(20)
+        q = (torch.empty((b, s, h, d), dtype=dtype, device=device).normal_(mean=0.0, std=0.5).requires_grad_())
+        k = (torch.empty((b, s, h, d), dtype=dtype, device=device).normal_(mean=0.0, std=0.5).requires_grad_())
+        v = (torch.empty((b, s, h, d), dtype=dtype, device=device).normal_(mean=0.0, std=0.5).requires_grad_())
+        dout = torch.randn_like(q)
+        ref_out, _ = attention_ref(q, k, v, causal=causal)
+        ref_out.backward(dout)
+        ref_dv, v.grad = v.grad.clone(), None
+        ref_dk, k.grad = k.grad.clone(), None
+        ref_dq, q.grad = q.grad.clone(), None
+        # FA implementation
+        fa_out = flash_attn_func(q, k, v, causal=causal)
+        fa_out.backward(dout)
+        fa_dv, v.grad = v.grad.clone(), None
+        fa_dk, k.grad = k.grad.clone(), None
+        fa_dq, q.grad = q.grad.clone(), None
+        # compare
+        torch.testing.assert_close(ref_out, fa_out, atol=1e-2, rtol=0)
+        rtol = 1e-2
+        torch.testing.assert_close(ref_dv, fa_dv, atol=1e-2, rtol=rtol)
+        torch.testing.assert_close(ref_dk, fa_dk, atol=1e-2, rtol=rtol)
+        torch.testing.assert_close(ref_dq, fa_dq, atol=1e-2, rtol=rtol)
+
     except Exception as e:
         print('--------------------------------------------------------------------------------')
         print('Exceptions raised during correctness check:'                                     )
