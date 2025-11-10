@@ -27,5 +27,5 @@ python driver.py --bench-script attn_triton.benchmark_attn --csv-file attn/shape
 
 ### Benchmark AITER attention operations
 ```
-python driver.py --bench-script attn_aiter.benchmark_attn --csv-file attn/shapes.csv
+python driver.py --bench-script attn_aiter.benchmark_attn --csv-file attn/aiter_shapes.csv
 ```
