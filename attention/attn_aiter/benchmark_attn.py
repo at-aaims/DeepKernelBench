@@ -221,23 +221,23 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
             ),
         )
 
-    # Correctness check
-    out, softmax_lse, dropout_mask, dq, dk, dv, dbias = run_ck(
-        q,
-        k,
-        v,
-        attn_bias,
-        alibi_slopes,
-        dout,
-        dropout_p,
-        causal,
-        window_size,
-        deterministic,
-        return_lse,
-        return_attn_probs,
-    )
-
     try:
+        # Correctness check
+        out, softmax_lse, dropout_mask, dq, dk, dv, dbias = run_ck(
+            q,
+            k,
+            v,
+            attn_bias,
+            alibi_slopes,
+            dout,
+            dropout_p,
+            causal,
+            window_size,
+            deterministic,
+            return_lse,
+            return_attn_probs,
+        )
+
         out_ref, softmax_lse_ref, dq_ref, dk_ref, dv_ref, dbias_ref = run_torch(
             q,
             k,
@@ -307,65 +307,8 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         print(e)
         print('--------------------------------------------------------------------------------')
 
-    for _ in range(warmup_iter):
-        q.grad = None
-        k.grad = None
-        v.grad = None
-        out, _ = aiter.flash_attn_func(
-         q,
-         k,
-         v,
-         dropout_p,
-         None,  # softmax_scale
-         causal,
-         window_size,
-         bias=None,
-         alibi_slopes=None,
-         deterministic=False,
-         return_lse=True,         # assertion error on false
-         return_attn_probs=False,
-         cu_seqlens_q=None,
-         cu_seqlens_kv=None
-        )
-        (dq, dk, dv) = torch.autograd.grad(
-            out,
-            (q, k, v),
-            dout,
-            retain_graph=True
-        )
-
-    torch.cuda.synchronize(device=device)
-
-    if profile:
-        profiler.start()
-
-    begin = torch.cuda.Event(enable_timing=True)
-    begin.record()
-
-    if forward_only:
-        with torch.no_grad():
-            for _ in range(num_iter):
-                _ = aiter.flash_attn_func(
-                 q,
-                 k,
-                 v,
-                 dropout_p,
-                 None,  # softmax_scale
-                 causal,
-                 window_size,
-                 bias=None,
-                 alibi_slopes=None,
-                 deterministic=False,
-                 return_lse=False,
-                 return_attn_probs=False,
-                 cu_seqlens_q=None,
-                 cu_seqlens_kv=None
-                )
-                if profile:
-                    profiler.step()
-
-    else:
-        for _ in range(num_iter):
+    try:
+        for _ in range(warmup_iter):
             q.grad = None
             k.grad = None
             v.grad = None
@@ -391,25 +334,91 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                 dout,
                 retain_graph=True
             )
-            if profile:
-                profiler.step()
 
-    end = torch.cuda.Event(enable_timing=True)
-    end.record()
-    torch.cuda.synchronize(device=device)
-    time = begin.elapsed_time(end) / 1000.0
+        torch.cuda.synchronize(device=device)
 
-    if profile:
-        profiler.stop()
+        if profile:
+            profiler.start()
 
-    if forward_only:
-        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, causal, 'fwd')
-    else:
-        flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, causal, 'fwd_bwd')
+        begin = torch.cuda.Event(enable_timing=True)
+        begin.record()
 
-    TFLOPS = flops / (time/num_iter) / 1e12 
+        if forward_only:
+            with torch.no_grad():
+                for _ in range(num_iter):
+                    _ = aiter.flash_attn_func(
+                     q,
+                     k,
+                     v,
+                     dropout_p,
+                     None,  # softmax_scale
+                     causal,
+                     window_size,
+                     bias=None,
+                     alibi_slopes=None,
+                     deterministic=False,
+                     return_lse=False,
+                     return_attn_probs=False,
+                     cu_seqlens_q=None,
+                     cu_seqlens_kv=None
+                    )
+                    if profile:
+                        profiler.step()
 
-    print(f"{num_iter / time:.6f} iter/s, {time:.3f} sec, {TFLOPS:.1f} TFLOPS")
+        else:
+            for _ in range(num_iter):
+                q.grad = None
+                k.grad = None
+                v.grad = None
+                out, _ = aiter.flash_attn_func(
+                 q,
+                 k,
+                 v,
+                 dropout_p,
+                 None,  # softmax_scale
+                 causal,
+                 window_size,
+                 bias=None,
+                 alibi_slopes=None,
+                 deterministic=False,
+                 return_lse=True,         # assertion error on false
+                 return_attn_probs=False,
+                 cu_seqlens_q=None,
+                 cu_seqlens_kv=None
+                )
+                (dq, dk, dv) = torch.autograd.grad(
+                    out,
+                    (q, k, v),
+                    dout,
+                    retain_graph=True
+                )
+                if profile:
+                    profiler.step()
+
+        end = torch.cuda.Event(enable_timing=True)
+        end.record()
+        torch.cuda.synchronize(device=device)
+        time = begin.elapsed_time(end) / 1000.0
+
+        if profile:
+            profiler.stop()
+
+        if forward_only:
+            flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, causal, 'fwd')
+        else:
+            flops = get_flops(1, batch_size, seqlen, num_heads, head_dim, causal, 'fwd_bwd')
+
+        TFLOPS = flops / (time/num_iter) / 1e12 
+
+        print(f"{num_iter / time:.6f} iter/s, {time:.3f} sec, {TFLOPS:.1f} TFLOPS")
+
+    except Exception as e:
+        print('--------------------------------------------------------------------------------')
+        print('Exceptions raised during benchmark execution:'                                     )
+        print(e)
+        print('--------------------------------------------------------------------------------')
+        TFLOPS = 0
+
     return TFLOPS
 
 if __name__ == "__main__":
