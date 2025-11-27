@@ -9,7 +9,6 @@ import triton
 import triton.language as tl
 from triton.runtime import driver
 
-
 @torch.jit.script
 def naive_softmax(x):
     """Compute row-wise softmax of X using native pytorch
@@ -31,7 +30,8 @@ def naive_softmax(x):
     return ret
 
 @triton.jit
-def softmax_kernel(output_ptr, input_ptr, input_row_stride, output_row_stride, n_cols, BLOCK_SIZE_X: tl.constexpr,
+def softmax_kernel(output_ptr, input_ptr, input_row_stride, output_row_stride, n_cols,
+                   BLOCK_SIZE_X: tl.constexpr,
                    BLOCK_SIZE_Y: tl.constexpr):
     # The rows of the softmax are independent, so we parallelize across those
     row_idx = tl.program_id(0) * BLOCK_SIZE_Y
@@ -57,8 +57,15 @@ def softmax_kernel(output_ptr, input_ptr, input_row_stride, output_row_stride, n
     output_ptrs = output_row_start_ptr + offsets
     tl.store(output_ptrs, softmax_output, mask=mask)
 
+DEVICE = driver.active.get_active_torch_device()
+DEVICE_TYPE = DEVICE.type
 
-MAX_WORK_GROUP_SIZE = 1024
+if DEVICE_TYPE == 'xpu':
+    device_id = torch.xpu.current_device()
+    properties = driver.active.utils.get_device_properties(device_id)
+    MAX_WORK_GROUP_SIZE = properties["max_work_group_size"]
+else:
+    MAX_WORK_GROUP_SIZE = 1024
 
 
 def softmax(x, y):
@@ -70,17 +77,12 @@ def softmax(x, y):
     BLOCK_SIZE_Y = BLOCK_SIZE_Y if BLOCK_SIZE_Y > 0 else 1
 
     # Create a number of persistent programs.
-    softmax_kernel[(n_rows // BLOCK_SIZE_Y, )](y, x, x.stride(0), y.stride(0), n_cols, BLOCK_SIZE_X=BLOCK_SIZE_X,
-                                               BLOCK_SIZE_Y=BLOCK_SIZE_Y)
+    softmax_kernel[(n_rows // BLOCK_SIZE_Y, )](y, x, x.stride(0), y.stride(0), n_cols,
+                                               BLOCK_SIZE_X=BLOCK_SIZE_X, BLOCK_SIZE_Y=BLOCK_SIZE_Y)
     return y
 
 
 def get_benchmark(providers_filter: Optional[list[str]] = None):
-    """
-    Returns a Mark object containing a Benchmark object constructed at runtime and parameterized by the provided option values.
-    The benchmark can then be executed by calling the :code:`.run` method on the return value.
-    """
-
     @triton.testing.perf_report(
         triton.testing.Benchmark(
             x_names=["N"],  # argument names to use as an x-axis for the plot
@@ -94,11 +96,11 @@ def get_benchmark(providers_filter: Optional[list[str]] = None):
             args={"M": 4096},  # values for function arguments not in `x_names` and `y_name`
         ))
     def benchmark(M, N, provider):
-        x = torch.randn(M, N, device="cuda", dtype=torch.bfloat16)
+        x = torch.randn(M, N, device=DEVICE, dtype=torch.bfloat16)
         if provider == "torch":
             ms = triton.testing.do_bench(lambda: torch.softmax(x, axis=-1))
         elif provider == "triton":
-            out = torch.empty_like(x, device="cuda")
+            out = torch.empty_like(x, device=DEVICE)
             triton_fn = lambda: softmax(x, out)
             ms = triton.testing.do_bench(triton_fn)
 
@@ -111,9 +113,10 @@ def get_benchmark(providers_filter: Optional[list[str]] = None):
 
 
 if __name__ == "__main__":
+    # a unit test
     torch.manual_seed(0)
-    x = torch.randn(1823, 781, device="cuda")
-    y_triton = torch.empty_like(x, device="cuda")
+    x = torch.randn(1823, 781, device=DEVICE)
+    y_triton = torch.empty_like(x, device=DEVICE)
     softmax(x, y_triton)
     y_torch = torch.softmax(x, axis=1)
     assert torch.allclose(y_triton, y_torch), (y_triton, y_torch)

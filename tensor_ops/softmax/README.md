@@ -1,11 +1,6 @@
 ## Fused Softmax
 
-## AMD and NVIDIA devices
+## AMD, NVIDIA, and XPU devices
 ```
 python benchmark.py
-```
-
-## Intel XPU devices
-```
-python benchmark_xpu.py
 ```
