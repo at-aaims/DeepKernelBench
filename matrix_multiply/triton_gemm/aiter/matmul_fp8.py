@@ -1,6 +1,5 @@
 import torch.nn.functional as F
 import pandas as pd
-import time
 import torch
 from tabulate import tabulate
 from triton.testing import do_bench
@@ -8,7 +7,6 @@ from typing import Union
 
 try:
     from aiter.ops.triton.gemm_a8w8 import gemm_a8w8
-    from aiter.ops.triton.utils.arch_info import get_fp8_dtypes
     import_aiter = True
 except:
     import_aiter = False
@@ -42,12 +40,11 @@ def generate_gemm_a8w8_inputs(
 
     max_x = x.abs().float().amax(dim=1, keepdim=True)
 
-    e5m2_type, e4m3_type = get_fp8_dtypes()
     dtype_max = {
       dtype: (torch.finfo(dtype) if dtype.is_floating_point else torch.iinfo(dtype)).max
       for dtype in [
-          e5m2_type,
-          e4m3_type,
+          torch.float8_e5m2,
+          torch.float8_e4m3fnuz,
           torch.int8,
       ]
     }
@@ -68,7 +65,7 @@ def generate_gemm_a8w8_inputs(
 
     return x, weight, x_scale, w_scale, bias, y
 
-def run_torch(x, weight, x_scale, w_scale, bias=None, dtype=torch.bfloat16):
+def run_torch_gemm(x, weight, x_scale, w_scale, bias=None, dtype=torch.bfloat16):
     x = F.linear(x.to(torch.float32), weight.to(torch.float32))
     scale = torch.matmul(x_scale, w_scale)
     out = torch.mul(x, scale)
@@ -76,7 +73,7 @@ def run_torch(x, weight, x_scale, w_scale, bias=None, dtype=torch.bfloat16):
         out = out.to(bias) + bias
     return out.to(dtype)
 
-def run_triton(x, weight, x_scale, w_scale, bias=None, dtype=torch.bfloat16, y=None):
+def run_aiter_gemm(x, weight, x_scale, w_scale, bias=None, dtype=torch.bfloat16, y=None):
     return gemm_a8w8(x, weight, x_scale, w_scale, bias, dtype, y)
 
 torch.manual_seed(0)
@@ -88,7 +85,7 @@ is_nvidia = "nvidia" in torch.cuda.get_device_name(0).lower()
 device = 'cuda'
 dtype_bf16 = torch.bfloat16
 dtype_fp8_e5m2 = torch.float8_e5m2
-dtype_fp8_e4m3 = torch.float8_e4m3fn if is_nvidia else torch.float8_e4m3fnuz
+dtype_fp8_e4m3 = torch.float8_e4m3fnuz
 
 # GEMM Shapes
 shapes = [
@@ -109,8 +106,8 @@ for (m, n, k) in shapes:
         m, n, k, dtype_fp8_e4m3, dtype_bf16, layout="TN", output=True
     )
 
-    a = run_torch(x, weight, x_scale, w_scale, bias, dtype_bf16)
-    b = run_triton(x, weight, x_scale, w_scale, bias, dtype_bf16, y)
+    a = run_torch_gemm(x, weight, x_scale, w_scale, bias, dtype_bf16)
+    b = run_aiter_gemm(x, weight, x_scale, w_scale, bias, dtype_bf16, y)
 
     try:
         torch.testing.assert_close(a, b, atol=0.02, rtol=1e-2)
