@@ -45,7 +45,7 @@ for (m, n, k) in shapes:
 
     torch.matmul(a, b1, out=c1)
     # x.shape[1] == w.shape[1]
-    gemm_a16w16(a, b2, dtype_bf16, c2, activation=None)
+    gemm_a16w16(a, b2, dtype=dtype_bf16, y=c2, activation=None)
 
     try:
         torch.testing.assert_close(c1, c2, atol=0.02, rtol=1e-2)
@@ -58,7 +58,7 @@ for (m, n, k) in shapes:
     time.sleep(timeout)
 
     if import_aiter:
-        ms_bf16 = do_bench(lambda: gemm_a16w16(a, b2, dtype_bf16, c2, activation=None), warmup=warmup, rep=repeats)
+        ms_bf16 = do_bench(lambda: gemm_a16w16(a, b2, dtype=dtype_bf16, y=c2, activation=None), warmup=warmup, rep=repeats)
         gemm_a16w16_tflops_bf16 = nFLOPS / ms_bf16 * 1e-9
         time.sleep(timeout)
     else:
