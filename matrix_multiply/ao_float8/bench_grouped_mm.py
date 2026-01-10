@@ -5,14 +5,83 @@
 # LICENSE file in the root directory of this source tree.
 import random
 from typing import Optional
-
 import pandas as pd
 import torch
-from utils import (
-    do_benchmarks,
-    get_name_to_moe_shapes_iter,
-    get_peak_tops_from_spec
-)
+import torch.utils.benchmark as benchmark
+
+def scaled_mm_supported_device():
+    if torch.cuda.is_available():
+        if torch.version.hip:
+            supported_architectures = ['gfx94', 'gfx95']
+            gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
+            return any(arch in gcn_arch for arch in supported_architectures)
+        else:
+            return torch.cuda.get_device_capability() >= (9, 0) or torch.cuda.get_device_capability() == (8, 9)
+    return False
+
+def get_name_to_moe_shapes_iter(
+    shape_gen_name: str,
+    M: Optional[int] = None,
+    K: Optional[int] = None,
+    N: Optional[int] = None,
+    E: Optional[int] = None,
+):
+    if shape_gen_name == "llama4_17bx8e":
+        # num_experts=8, dim=5120
+        names_to_shapes = {
+            # M, K, N, E
+            "moe.experts.w1": (16640, 5120, 8192, 8),
+            "moe.experts.w2": (16640, 8192, 5120, 8),
+        }
+        return names_to_shapes.items()
+    elif shape_gen_name == "llama4_17bx16e":
+        # num_experts=16, dim=5120
+        names_to_shapes = {
+            # M, K, N, E
+            "moe.experts.w1": (16640, 5120, 8192, 16),
+            "moe.experts.w2": (16640, 8192, 5120, 16),
+        }
+        return names_to_shapes.items()
+    elif shape_gen_name == "llama4_17bx64e":
+        # num_experts=64, dim=5120
+        names_to_shapes = {
+            # M, K, N, E
+            "moe.experts.w1": (16640, 5120, 5120*2, 64),
+            "moe.experts.w2": (16640, 5120*2, 5120, 64),
+        }
+        return names_to_shapes.items()
+    elif shape_gen_name == "custom":
+        assert M is not None and K is not None and N is not None and E is not None, (
+            "M, K, N, E must be specified for custom shape_gen"
+        )
+        name_to_shapes = {
+            1: (M, K, N, E),
+        }
+        return name_to_shapes.items()
+
+    raise AssertionError(f"unknown shape_gen_name {shape_gen_name}")
+
+
+def benchmark_fn_in_sec(f, *args, **kwargs):
+    # Manual warmup
+    for _ in range(30):
+        f(*args, **kwargs)
+
+    t0 = benchmark.Timer(
+        stmt="f(*args, **kwargs)", globals={"args": args, "kwargs": kwargs, "f": f}
+    )
+    measurement = t0.blocked_autorange(min_run_time=1)
+    return measurement.mean
+
+
+def do_benchmarks(
+    f,
+    *args,
+    **kwargs,
+):
+    # e2e time including kernel launch overhead
+    time_sec = benchmark_fn_in_sec(f, *args, **kwargs)
+    return time_sec
 
 
 @torch.inference_mode()
@@ -25,18 +94,12 @@ def run(
     out_filename: Optional[str] = None,
     shape_gen_name="llama4_17bx16e",
     recipe: str = "rowwise",
-    use_gpu_kernel_time: bool = True,
 ):
-    device = "cuda"
+    device = torch.device(f"cuda:0")
+    torch.cuda.set_device(device)
 
     assert recipe in ("rowwise",), "unsupported"
 
-    gpu_name = torch.cuda.get_device_name(0)
-    dtype_to_peak_tops = get_peak_tops_from_spec(gpu_name)
-    bf16_peak_tops = dtype_to_peak_tops[torch.bfloat16]
-    fp8_peak_tops = dtype_to_peak_tops[torch.float8_e4m3fn]
-    print(f"gpu_name: {torch.cuda.get_device_name(0)}")
-    print(f"peak tops: bf16 {bf16_peak_tops:.2e}, fp8 {fp8_peak_tops:.2e}")
     headers = (
         "name",
         "recipe",
@@ -53,9 +116,7 @@ def run(
     dtype = torch.bfloat16
     name_to_shapes = get_name_to_moe_shapes_iter(shape_gen_name, M, K, N, E)
 
-    for idx, (name, (M, K, N, E)) in enumerate(
-        name_to_shapes,
-    ):
+    for idx, (name, (M, K, N, E)) in enumerate(name_to_shapes,):
         if n_limit is not None and idx >= n_limit:
             break
         assert M % E == 0, (
@@ -63,83 +124,85 @@ def run(
         )
         tops = 2 * M * N * K * E
         print("M, K, N, E:", M, K, N, E, f"tops: {tops:.2E}")
+ 
+        try:
+            # Run bf16 torch._grouped_mm baseline.
+            A = torch.randn(M, K, device=device, dtype=dtype)
+            B = torch.randn(E, K, N, device=device, dtype=dtype)
+            offs = generate_jagged_offs(E, M).to(device)
 
-        # Run bf16 torch._grouped_mm baseline.
-        A = torch.randn(M, K, device=device, dtype=dtype)
-        B = torch.randn(E, K, N, device=device, dtype=dtype)
-        offs = generate_jagged_offs(E, M)
-        #print(f"offs: {offs}")
-        ref_time_sec, ref_tops_sec, ref_pct_top_peak = do_benchmarks(
-            tops,
-            bf16_peak_tops,
-            use_gpu_kernel_time,
-            torch._grouped_mm,
-            A,
-            B,
-            offs,
-        )
-        print(
-            f"{dtype} time_sec {ref_time_sec:.2E}, tops/sec {ref_tops_sec:.2E}, pct_peak {ref_pct_top_peak:.3f}"
-        )
-        del A
-        del B
+            ref_time_sec = do_benchmarks(
+                torch._grouped_mm,
+                A,
+                B,
+                offs,
+            )
+            print(
+                f"{dtype} time_sec {ref_time_sec:.2E}"
+            )
+            del A
+            del B
 
-        # Run scaled_grouped_mm.
-        A_hp = torch.randn(M, K, device=device)
-        B_hp_t = (
-            torch.randn(E, K, N, device=device)
-            .transpose(-2, -1)
-            .contiguous()
-            .transpose(-2, -1)
-        )
+            # Run scaled_grouped_mm.
+            A_hp = torch.randn(M, K, device=device)
+            B_hp_t = (
+                torch.randn(E, K, N, device=device)
+                .transpose(-2, -1)
+                .contiguous()
+                .transpose(-2, -1)
+            )
 
-        if recipe == "rowwise":
-            # TODO: add e5m2
-            A = A_hp.to(torch.float8_e4m3fn)
-            B = B_hp_t.to(torch.float8_e4m3fn)
-            peak_tops = fp8_peak_tops
-            scale_a = torch.ones(M, device=device)
-            scale_b = torch.ones(E, N, device=device)
-        else:
-            assert False, f"unknown recipe {recipe}"
+            if recipe == "rowwise":
+                # TODO: add e5m2
+                A = A_hp.to(torch.float8_e4m3fn)
+                del A_hp
+                B = B_hp_t.to(torch.float8_e4m3fn)
+                del B_hp_t
+                scale_a = torch.ones(M, device=device)
+                scale_b = torch.ones(E, N, device=device)
+            else:
+                assert False, f"unknown recipe {recipe}"
 
-        def do_scaled_grouped_mm(A, B):
-            nonlocal scale_a
-            nonlocal scale_b
-            nonlocal offs
-            return torch._scaled_grouped_mm(A, B, scale_a, scale_b, offs=offs)
+            def do_scaled_grouped_mm(A, B):
+                nonlocal scale_a
+                nonlocal scale_b
+                nonlocal offs
+                return torch._scaled_grouped_mm(A, B, scale_a, scale_b, offs=offs)
 
-        if recipe == "rowwise":
-            do_matmul = do_scaled_grouped_mm
-        else:
-            raise ValueError(f"unknown recipe {recipe}")
+            if recipe == "rowwise":
+                do_matmul = do_scaled_grouped_mm
+            else:
+                raise ValueError(f"unknown recipe {recipe}")
 
-        time_sec, tops_sec, pct_top_peak = do_benchmarks(
-            tops, peak_tops, use_gpu_kernel_time, do_matmul, A, B
-        )
-        print(
-            f"torch.float8_e4m3 time_sec {time_sec:.2E}, tops/sec {tops_sec:.2E}, pct_peak {pct_top_peak:.3f}"
-        )
+            time_sec = do_benchmarks(do_matmul, A, B)
+            print(
+                f"torch.float8_e4m3 time_sec {time_sec:.2E}"
+            )
 
-        del A, B
-        if scale_a is not None:
-            del scale_a
-        if scale_b is not None:
-            del scale_b
+            del A, B
+            if scale_a is not None:
+                del scale_a
+            if scale_b is not None:
+                del scale_b
 
-        results.append(
-            [
-                name,
-                recipe,
-                M,
-                K,
-                N,
-                E,
-                ref_time_sec,
-                time_sec,
-                ref_time_sec / time_sec,
-            ]
-        )
+            results.append(
+                [
+                    name,
+                    recipe,
+                    M,
+                    K,
+                    N,
+                    E,
+                    ref_time_sec,
+                    time_sec,
+                    ref_time_sec / time_sec,
+                ]
+            )
+        except Exception as e:
+            print('--------------------------------------------------------------------------------')
+            print('Exceptions raised during grouped GEMM benchmark:'                                )
+            print(e)
+            print('--------------------------------------------------------------------------------')
 
     data_df = pd.DataFrame(results, columns=headers)
     print(data_df)
@@ -148,7 +211,7 @@ def run(
         data_df.to_csv(out_filename)
 
 
-def generate_jagged_offs(E, M, dtype=torch.int32, device="cuda"):
+def generate_jagged_offs(E, M, dtype=torch.int32):
     """
     Generates a tensor of length E, containing random values divisible by 16,
     from 0 to M, in sorted order, and where the final value in the tensor is always M.
@@ -178,15 +241,23 @@ def generate_jagged_offs(E, M, dtype=torch.int32, device="cuda"):
     # Sort the selected values
     selected_values, _ = torch.sort(selected_values)
 
-    return selected_values.to(dtype).to(device)
+    return selected_values.to(dtype)
 
 
 def main() -> None:
-    run(shape_gen_name="llama4_17bx16e",
-        out_filename="grouped_mm_llama4_17bx16e.txt")
-    run(shape_gen_name="llama4_17bx128e",
-        out_filename="grouped_mm_llama4_17bx128e.txt")
+    if not scaled_mm_supported_device():
+        print("FP8 is only supported on H100+ and sm_89 and MI300+ devices. Skip the benchmark.")
+        return
+
+    gpu_name = torch.cuda.get_device_name(0)
+    print(f"gpu_name: {torch.cuda.get_device_name(0)}")
+
+    device_name = gpu_name.replace(' ', '_')
+
+    run(shape_gen_name="llama4_17bx8e", out_filename=f"{device_name}_grouped_mm_llama4_17bx8e.txt")
+    run(shape_gen_name="llama4_17bx16e", out_filename=f"{device_name}_grouped_mm_llama4_17bx16e.txt")
+    run(shape_gen_name="llama4_17bx64e", out_filename=f"{device_name}_grouped_mm_llama4_17bx64e.txt")
 
 
 if __name__ == "__main__":
-    main()  # pragma: no cover
+    main()
