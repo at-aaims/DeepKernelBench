@@ -16,16 +16,16 @@ python driver.py --help
 The README files in sub-directories provide the commands to run the benchmarks.
 
 ## Support matrix
-| Benchmark name | Intel Max1100 | AMD MI250X | AMD MI300A | NVIDIA H100 |
+| Benchmark name | Intel B580 (16GB) | AMD MI250X (64GB) | AMD MI300A (128GB) | NVIDIA H100 (80GB) |
 |---|---|---|---|---|
 | attn  | ❌ | ✅ |✅ | ✅ |
 | attn_triton | ✅ | ✅ |✅ | ✅ |
 | sdpa | limited| ✅ |✅ | ✅ |
-| flex | ❌ | ✅ |✅ | ✅ |
-| ao_float8 | ❌ |❌ |✅ | ✅ |
-| fp8_gemm | ❌ |❌ |✅ | ✅ |
-| semianalysiswork | ❌ |❌ | ✅ |✅|
+| flex | ✅ | ✅ |✅ | ✅ |
+| fp8_gemm | ✅ |❌ |✅ | ✅ |
+| semianalysiswork | ✅ |❌ | ✅ |✅|
 | bgemm | ✅ |✅ | ✅ |✅ |
+| group-gemm | ❌ |✅ | ✅ |✅ |
 | gemm | ✅ |✅ | ✅ |✅ |
 | int8_gemm | ✅ |✅ | ✅ |✅ |
 | aiter | ❌ |✅ | ✅ |❌|
