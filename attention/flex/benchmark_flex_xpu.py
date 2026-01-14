@@ -153,9 +153,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Parse model configuration arguments.")
 
-    parser.add_argument("--batch_size", type=int, default=1, help="Batch size for training or inference.")
-    parser.add_argument("--seq_length", type=int, default=16384, help="Sequence length for input data.")
-    parser.add_argument("--num_heads", type=int, default=6, help="Number of attention heads.")
+    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training or inference.")
+    parser.add_argument("--seq_length", type=int, default=128, help="Sequence length for input data.")
+    parser.add_argument("--num_heads", type=int, default=8, help="Number of attention heads.")
     parser.add_argument("--head_dim", type=int, default=64, help="Dimension of each attention head.")
     parser.add_argument("--forward_only", action='store_true', help="Benchmark forward pass only.")
     parser.add_argument("--num_iter", type=int, default=100, help="Number of iterations.")
