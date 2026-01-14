@@ -65,7 +65,6 @@ if __name__ == "__main__":
     warmup = 30
     timeout = 10
     
-    device = 'cuda'
     dtype_bf16 = torch.bfloat16
     
     # GEMM Shapes
@@ -84,11 +83,11 @@ if __name__ == "__main__":
         nFLOPS = 2 * m * n * k
     
         # Matmul benchmark in bf16
-        a = torch.randn(m, k, device=device, dtype=dtype_bf16)
-        b = torch.randn(k, n, device=device, dtype=dtype_bf16)
+        a = torch.randn(m, k, device=DEVICE, dtype=dtype_bf16)
+        b = torch.randn(k, n, device=DEVICE, dtype=dtype_bf16)
     
-        c1 = torch.zeros(m, n, device=device, dtype=dtype_bf16)
-        c2 = torch.zeros(m, n, device=device, dtype=dtype_bf16)
+        c1 = torch.zeros(m, n, device=DEVICE, dtype=dtype_bf16)
+        c2 = torch.zeros(m, n, device=DEVICE, dtype=dtype_bf16)
     
         torch.matmul(a, b, out=c1)
         autotune(a, b, c2, m, k, n)
@@ -130,7 +129,11 @@ if __name__ == "__main__":
     print(f"Benchmark results for Realistic GEMM shapes with {warmup=} and {repeats=}")
     print(table)
     
-    device_name = torch.cuda.get_device_name(0).replace(' ', '_')
+    if DEVICE.type == 'xpu':
+        device_name = torch.xpu.get_device_name(0).replace(' ', '_')
+    else
+        device_name = torch.cuda.get_device_name(0).replace(' ', '_')
+
     save_file = f"helion_matmul_{device_name}_results.csv"
     df = pd.DataFrame.from_records(results, columns=headers)
     df.to_csv(save_file)
