@@ -1,10 +1,14 @@
 import math
 import torch
 from einops import rearrange, repeat
-from flash_attn import flash_attn_func, flash_attn_qkvpacked_func
 from torch.nn.attention import SDPBackend, sdpa_kernel
 import torch.nn.functional as F
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+
+try:
+    from flash_attn import flash_attn_func, flash_attn_qkvpacked_func
+except Exception as e:
+    print(e)
 
 # https://github.com/Dao-AILab/flash-attention/blob/main/tests/test_flash_attn.py
 def construct_local_mask(
