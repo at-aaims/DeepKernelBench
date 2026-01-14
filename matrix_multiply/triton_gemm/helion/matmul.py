@@ -131,7 +131,7 @@ if __name__ == "__main__":
     
     if DEVICE.type == 'xpu':
         device_name = torch.xpu.get_device_name(0).replace(' ', '_')
-    else
+    else:
         device_name = torch.cuda.get_device_name(0).replace(' ', '_')
 
     save_file = f"helion_matmul_{device_name}_results.csv"
