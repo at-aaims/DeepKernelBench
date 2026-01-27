@@ -246,7 +246,7 @@ def generate_jagged_offs(E, M, dtype=torch.int32):
 
 def main() -> None:
     if not scaled_mm_supported_device():
-        print("FP8 is only supported on H100+ and sm_89 and MI300+ devices. Skip the benchmark.")
+        print("FP8 scaled GEMM is only supported on H100+ and sm_89 and MI300+ devices. Skip the benchmark.")
         return
 
     gpu_name = torch.cuda.get_device_name(0)
@@ -254,10 +254,7 @@ def main() -> None:
 
     device_name = gpu_name.replace(' ', '_')
 
-    run(shape_gen_name="llama4_17bx8e", out_filename=f"{device_name}_grouped_mm_llama4_17bx8e.txt")
     run(shape_gen_name="llama4_17bx16e", out_filename=f"{device_name}_grouped_mm_llama4_17bx16e.txt")
-    run(shape_gen_name="llama4_17bx64e", out_filename=f"{device_name}_grouped_mm_llama4_17bx64e.txt")
-
 
 if __name__ == "__main__":
     main()
