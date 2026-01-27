@@ -234,7 +234,7 @@ MoEModelConfigs = {
     # https://modelscope.cn/models/Qwen/Qwen3-30B-A3B-Instruct-2507/file/view/master/config.json
     "Qwen3-30B-A3B": {
         "n_routed_experts": 128,
-        "moe_intermediate_size": 2048,
+        "moe_intermediate_size": 768,
         "hidden_size": 2048,
         # GQA attention config
         "num_attention_heads": 32,
@@ -243,6 +243,19 @@ MoEModelConfigs = {
         "seqlen": 8192,
         "num_experts": 128,
         "num_topk": 8,
+    },
+    #https://modelscope.cn/models/LLM-Research/Llama-4-Scout-17B-16E/file/view/master/config.json
+    "Llama4-17B-16E": {
+        "n_routed_experts": 16,
+        "moe_intermediate_size": 8192,
+        "hidden_size": 5120,
+        # GQA attention config
+        "num_attention_heads": 40,
+        "num_key_value_heads": 8,
+        "head_dim": 64,
+        "seqlen": 8192,
+        "num_experts": 16,
+        "num_topk": 1,
     },
     # https://modelscope.cn/models/Qwen/Qwen3-235B-A22B-Instruct-2507
     "Qwen3-235B-A22B": {
