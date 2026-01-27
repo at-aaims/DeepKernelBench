@@ -22,6 +22,15 @@ from config import (
 )
 from tabulate import tabulate
 
+def grouped_mm_supported_device():
+    if torch.cuda.is_available():
+        if torch.version.hip:
+            supported_architectures = ['gfx94', 'gfx95']
+            gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
+            return any(arch in gcn_arch for arch in supported_architectures)
+        else:
+            return torch.cuda.get_device_capability() >= (9, 0) or torch.cuda.get_device_capability() == (8, 9)
+    return False
 
 def check_grouped_gemm_correctness(x, w, group_lens, out, grad_out, dtype):
     out_ref = grouped_gemm_ref(x.detach(), w.detach(), group_lens, trans_b=True)
@@ -164,8 +173,21 @@ def benchmark_grouped_gemm_torch(output_csv=None):
     results.to_csv(filename, index=False)
     print(f"Results saved to {filename}")
 
+def grouped_mm_supported_device():
+    if torch.cuda.is_available():
+        if torch.version.hip:
+            supported_architectures = ['gfx94', 'gfx95']
+            gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
+            return any(arch in gcn_arch for arch in supported_architectures)
+        else:
+            return False
+    return False
 
 if __name__ == "__main__":
+    if not grouped_mm_supported_device():
+        print("Grouped GEMM is only supported on H100+ and sm_89 and MI300+ devices. Skip the benchmark.")
+        return
+
     parser = argparse.ArgumentParser(description="Benchmark PyTorch Grouped GEMM (Baseline)")
     parser.add_argument(
         "--output",

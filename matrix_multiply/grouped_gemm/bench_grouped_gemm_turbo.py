@@ -109,7 +109,7 @@ def profile_grouped_gemm(B, M, N, K, dtype):
     fwd_total_flops = 2 * B * M * N * K
     bwd_total_flops = 2 * fwd_total_flops
 
-    for _ in range(20):
+    for _ in range(30):
         fwd_func()
         bwd_func()
     torch.cuda.synchronize()
@@ -275,6 +275,10 @@ def benchmark_grouped_gemm_turbo(dtype_name="bf16", granularity_name="tensorwise
 
 
 if __name__ == "__main__":
+    if not grouped_mm_supported_device():
+        print("Primus Turbo Grouped GEMM is only supported on AMD MI300+ devices. Skip the benchmark.")
+        return
+
     parser = argparse.ArgumentParser(description="Benchmark Primus-Turbo Grouped GEMM operations")
     parser.add_argument(
         "--dtype",
