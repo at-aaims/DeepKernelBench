@@ -29,3 +29,8 @@ python driver.py --bench-script attn_triton.benchmark_attn --csv-file attn/shape
 ```
 python driver.py --bench-script attn_aiter.benchmark_attn --csv-file attn/aiter_shapes.csv
 ```
+
+### Benchmark VLLM paged attention v2 operations
+```
+python driver.py --bench-script attn_paged.benchmark_paged_attention --csv-file attn_paged/shapes.csv
+```
