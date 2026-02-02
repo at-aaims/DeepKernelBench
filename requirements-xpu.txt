@@ -1,0 +1,33 @@
+# build
+regex 
+cmake>=3.26
+packaging>=24.2
+setuptools-scm>=8
+setuptools>=77.0.3,<80.0.0
+wheel
+build
+ninja
+
+# torch releated dependency
+--extra-index-url=https://download.pytorch.org/whl/xpu
+torch==2.10.0+xpu
+triton-xpu
+torchao
+torchtnt
+torch_geometric
+# may need oneapi packages
+
+# tests
+pytest
+
+# dependencies
+matplotlib # in benchmark, introduced by triton
+pandas # in benchmark, introduced by triton
+transformers # for model config
+tabulate
+scikit-learn 
+ruamel.yaml
+helion
+psutil
+tiktoken
+timm

@@ -1,0 +1,36 @@
+# build
+regex 
+cmake>=3.26
+packaging>=24.2
+setuptools-scm>=8
+setuptools>=77.0.3,<80.0.0
+wheel
+build
+ninja
+
+# torch releated dependency
+# vllm may require a specific version of torch
+--extra-index-url
+https://wheels.vllm.ai/rocm/0.15.0/rocm700
+vllm==0.15.0+rocm700 
+#torch
+#triton
+
+torchao
+torchtnt
+torch_geometric
+
+# tests
+pytest
+
+# dependencies
+matplotlib # in benchmark, introduced by triton
+pandas # in benchmark, introduced by triton
+transformers # for model config
+tabulate
+scikit-learn 
+ruamel.yaml
+helion
+psutil
+tiktoken
+timm
