@@ -34,3 +34,17 @@ helion
 psutil
 tiktoken
 timm
+
+# install from source
+# git clone --recursive https://github.com/ROCm/aiter.git
+# cd aiter
+# python3 setup.py develop
+
+# git clone https://github.com/AMD-AGI/Primus-Turbo.git
+# cd Primus-Turbo
+# GPU_ARCHS="gfx942;gfx950" pip3 install --no-build-isolation -e . -v
+
+# git clone https://github.com/ROCm/tritonBLAS
+# cd tritonBLAS.
+# pip install -e .
+
