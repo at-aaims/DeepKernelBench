@@ -50,7 +50,8 @@ cd grouped_gemm
 python bench_grouped_gemm_turbo.py --dtype fp8 --granularity tensorwise
 python bench_grouped_gemm_turbo.py --dtype fp8 --granularity rowwise
 python bench_grouped_gemm_turbo.py --dtype fp8 --granularity blockwise
-python bench_grouped_gemm_turbo.py --dtype bf16
+python bench_grouped_gemm_turbo.py --dtype bf16 --backend CK
+python bench_grouped_gemm_turbo.py --dtype bf16 --backend HIPBLASLT
 ```
 
 ### Benchmark the GEMM operations in TritonBLAS
