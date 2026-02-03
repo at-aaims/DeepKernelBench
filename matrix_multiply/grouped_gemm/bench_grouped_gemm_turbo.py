@@ -8,7 +8,7 @@
 
 import argparse
 from datetime import datetime
-
+import sys
 import pandas as pd
 import torch
 import torch.utils.benchmark as benchmark
@@ -22,7 +22,11 @@ from config import (
 )
 from tabulate import tabulate
 
+
 import primus_turbo.pytorch as turbo
+
+from primus_turbo.pytorch.core.backend import BackendType, GlobalBackendManager
+
 from primus_turbo.pytorch.core.low_precision import (
     Float8QuantConfig,
     Format,
@@ -90,9 +94,13 @@ def check_grouped_gemm_fp8_correctness(a, b, out, grad_out, group_lens, fp8_form
     return correct
 
 
-def profile_grouped_gemm(B, M, N, K, dtype):
+def profile_grouped_gemm(B, M, N, K, dtype, backend):
     """Profile BF16 Grouped GEMM."""
     device = "cuda"
+
+    GlobalBackendManager.set_grouped_gemm_backend(backend)
+    GlobalBackendManager.set_auto_tune(True)
+
     x = torch.randn((B * M, K), dtype=dtype, device=device, requires_grad=True)
     w = torch.randn((B, N, K), dtype=dtype, device=device, requires_grad=True)
     group_lens = gen_grouped_gemm_group_lens(B, M, balance=True).to(device)
@@ -126,6 +134,8 @@ def profile_grouped_gemm(B, M, N, K, dtype):
     print(f"Forward  Mean time: {fwd_mean_time_ms:.3f} ms | TFLOPS: {fwd_tflops:.2f}")
     print(f"Backward Mean time: {bwd_mean_time_ms:.3f} ms | TFLOPS: {bwd_tflops:.2f}")
 
+    GlobalBackendManager.reset()
+
     return fwd_mean_time_ms, fwd_tflops, bwd_mean_time_ms, bwd_tflops, correct
 
 
@@ -148,7 +158,7 @@ def profile_grouped_gemm_fp8(B, M, N, K, dtype, config):
     fwd_total_flops = 2 * B * M * N * K
     bwd_total_flops = 2 * fwd_total_flops
 
-    for _ in range(20):
+    for _ in range(30):
         fwd_func()
         bwd_func()
     torch.cuda.synchronize()
@@ -168,10 +178,12 @@ def profile_grouped_gemm_fp8(B, M, N, K, dtype, config):
     return fwd_mean_time_ms, fwd_tflops, bwd_mean_time_ms, bwd_tflops, correct
 
 
-def benchmark_grouped_gemm_turbo(dtype_name="bf16", granularity_name="tensorwise", output_csv=None):
+def benchmark_grouped_gemm_turbo(dtype_name="bf16", backend_name="CK", granularity_name="tensorwise", output_csv=None):
     platform, gpu_name = get_platform_info()
 
     is_fp8 = dtype_name == "fp8"
+    is_ck_backend = backend_name == "CK"
+    is_hipblaslt_backend = backend_name == "HIPBLASLT"
     config = GRANULARITY_CONFIG_MAP[granularity_name] if is_fp8 else None
 
     test_cases = gen_grouped_gemm_test_cases()
@@ -183,24 +195,28 @@ def benchmark_grouped_gemm_turbo(dtype_name="bf16", granularity_name="tensorwise
         B, M, N, K = case["B"], case["M"], case["N"], case["K"]
         dtype = case["dtype"]
 
-        print(f"\n{'='*60}")
+        print(f"\n{'='*80}")
         if is_fp8:
             print(
                 f"TestID: {test_id}, Case: {case['Case']}, B: {B}, M: {M}, N: {N}, K: {K}, "
                 f"dtype: fp8, granularity: {granularity_name}"
             )
         else:
-            print(f"TestID: {test_id}, Case: {case['Case']}, B: {B}, M: {M}, N: {N}, K: {K}, dtype: bf16")
-        print(f"{'='*60}")
+            print(f"TestID: {test_id}, Case: {case['Case']}, B: {B}, M: {M}, N: {N}, K: {K}, dtype: {dtype_name}, backend: {backend_name}")
+        print(f"{'='*80}")
 
         try:
             if is_fp8:
                 fwd_time_ms, fwd_tflops, bwd_time_ms, bwd_tflops, correct = profile_grouped_gemm_fp8(
                     B=B, M=M, N=N, K=K, dtype=dtype, config=config
                 )
-            else:
+            elif is_ck_backend:
                 fwd_time_ms, fwd_tflops, bwd_time_ms, bwd_tflops, correct = profile_grouped_gemm(
-                    B=B, M=M, N=N, K=K, dtype=dtype
+                    B=B, M=M, N=N, K=K, dtype=dtype, backend=BackendType.CK
+                )
+            elif is_hipblaslt_backend:
+                fwd_time_ms, fwd_tflops, bwd_time_ms, bwd_tflops, correct = profile_grouped_gemm(
+                    B=B, M=M, N=N, K=K, dtype=dtype, backend=BackendType.HIPBLASLT
                 )
 
             row = {
@@ -273,11 +289,21 @@ def benchmark_grouped_gemm_turbo(dtype_name="bf16", granularity_name="tensorwise
     results.to_csv(filename, index=False)
     print(f"Results saved to {filename}")
 
+def grouped_mm_supported_device():
+    if torch.cuda.is_available():
+        if torch.version.hip:
+            supported_architectures = ['gfx94', 'gfx95']
+            gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
+            return any(arch in gcn_arch for arch in supported_architectures)
+        else:
+            return torch.cuda.get_device_capability() >= (9, 0) or torch.cuda.get_device_capability() == (8, 9)
+    return False
+
 
 if __name__ == "__main__":
     if not grouped_mm_supported_device():
         print("Primus Turbo Grouped GEMM is only supported on AMD MI300+ devices. Skip the benchmark.")
-        return
+        sys.exit()
 
     parser = argparse.ArgumentParser(description="Benchmark Primus-Turbo Grouped GEMM operations")
     parser.add_argument(
@@ -286,6 +312,13 @@ if __name__ == "__main__":
         choices=["bf16", "fp8"],
         default="bf16",
         help="Data type: bf16 or fp8 (default: bf16)",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["CK", "HIPBLASLT"],
+        default="CK",
+        help="Backend for 16-bit floating-point data type only (default: CK)",
     )
     parser.add_argument(
         "--granularity",
@@ -303,5 +336,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     benchmark_grouped_gemm_turbo(
-        dtype_name=args.dtype, granularity_name=args.granularity, output_csv=args.output
+        dtype_name=args.dtype, backend_name=args.backend, granularity_name=args.granularity, output_csv=args.output
     )
