@@ -10,6 +10,8 @@ import argparse
 from datetime import datetime
 
 import pandas as pd
+import sys
+
 import torch
 import torch.utils.benchmark as benchmark
 from config import (
@@ -22,15 +24,6 @@ from config import (
 )
 from tabulate import tabulate
 
-def grouped_mm_supported_device():
-    if torch.cuda.is_available():
-        if torch.version.hip:
-            supported_architectures = ['gfx94', 'gfx95']
-            gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
-            return any(arch in gcn_arch for arch in supported_architectures)
-        else:
-            return torch.cuda.get_device_capability() >= (9, 0) or torch.cuda.get_device_capability() == (8, 9)
-    return False
 
 def check_grouped_gemm_correctness(x, w, group_lens, out, grad_out, dtype):
     out_ref = grouped_gemm_ref(x.detach(), w.detach(), group_lens, trans_b=True)
@@ -186,7 +179,7 @@ def grouped_mm_supported_device():
 if __name__ == "__main__":
     if not grouped_mm_supported_device():
         print("Grouped GEMM is only supported on H100+ and sm_89 and MI300+ devices. Skip the benchmark.")
-        return
+        sys.exit()
 
     parser = argparse.ArgumentParser(description="Benchmark PyTorch Grouped GEMM (Baseline)")
     parser.add_argument(
