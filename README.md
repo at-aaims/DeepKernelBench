@@ -1,21 +1,21 @@
 # Quick Start
 
 ## NVIDIA GPUs
-1. Download and install the CUDA Toolkit for your corresponding platform. For system requirements and installation instructions of cuda toolkit, please refer to the [Linux Installation Guide](http://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
+1. Download and install the CUDA Toolkit for your corresponding platform. For system requirements and installation instructions of the CUDA toolkit, please refer to the [Linux Installation Guide](http://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
 2. Create a new virtual env and install build dependencies
 ```
    pip install -r requirements-cuda.txt
 ```
 
 ## AMD GPUs
-1. Download and install the ROCm Toolkit for your corresponding platform. For system requirements and installation instructions of cuda toolkit, please refer to the [Linux Installation Guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/)
+1. Download and install the ROCm Toolkit for your corresponding platform. For system requirements and installation instructions of ROCm toolkit, please refer to the [Linux Installation Guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/)
 2. Create a new virtual env and install build dependencies
 ```
    pip install -r requirements-rocm.txt
 ```
 
 ## Intel XPU devices
-1. Install the [Intel oneAPI 2025.3 Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html)
+1. Download and install the [Intel oneAPI 2025.3 Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html)
 2. Create a new virtual env and install build dependencies
 ```
    pip install -r requirements-xpu.txt
