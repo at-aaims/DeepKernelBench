@@ -348,6 +348,11 @@ BATCH_SIZE_LIST = [1, 2, 4]
 GROUPED_GEMM_M_SIZE_LIST = [512, 1024, 2048, 4096, 8192, 16384]
 GROUPED_GEMM_EP_SIZE_LIST = [32, 16, 8]
 
+# fast run
+#BATCH_SIZE_LIST = [4]
+#GROUPED_GEMM_M_SIZE_LIST = [512]
+#GROUPED_GEMM_EP_SIZE_LIST = [32]
+
 ###############################################################################
 # Test Case Generators
 ###############################################################################
@@ -384,6 +389,7 @@ def gen_gemm_test_cases(model_config):
 def gen_grouped_gemm_group_lens(b, m, balance: bool = True):
     """Generate group lengths for grouped GEMM."""
     if balance:
+        #Creates a tensor of size (b,) filled with fill_value (m). The tensor’s dtype is inferred from fill_value.
         return torch.full((b,), m, dtype=torch.int64)
     else:
         dist = 0.2 + 0.8 * torch.rand(b)
