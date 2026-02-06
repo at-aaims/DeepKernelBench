@@ -32,3 +32,4 @@ helion
 psutil
 tiktoken
 timm
+flash_attn
