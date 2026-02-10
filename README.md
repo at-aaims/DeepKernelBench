@@ -48,7 +48,8 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | semianalysiswork | ✅ |❌ | ✅ |✅|
 | bgemm | ✅ |✅ | ✅ |✅ |
 | group-gemm | ❌ |✅ | ✅ |✅ |
-| group-gemm-triton | ✅  |✅ | ✅ |✅ |
+| group-gemm-triton | ✅ |✅ | ✅ |✅ |
+| group-gemm-turbo | ❌ | ❌ | ✅ |❌ |
 | gemm | ✅ |✅ | ✅ |✅ |
 | int8_gemm | ✅ |✅ | ✅ |✅ |
 | aiter | ❌ |✅ | ✅ |❌|
