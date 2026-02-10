@@ -14,19 +14,22 @@ import torch
 # Platform Detection
 ###############################################################################
 
-
-def get_platform_info():
-    """Detect the current platform (CUDA/ROCm) and return device info."""
-    device_name = torch.cuda.get_device_name(0)
-
-    if "AMD" in device_name or "MI" in device_name or "Radeon" in device_name:
-        platform = "ROCm"
-        match = re.search(r"(MI\d+[A-Za-z]*)", device_name)
-        gpu_name = match.group(1) if match else device_name.split()[-1]
+def get_platform_info(torch_device_type='cuda'):
+    """Detect the current platform and return device info."""
+    if torch_device_type == 'xpu':
+        device_name = torch.xpu.get_device_name(0)
+        platform = "oneAPI"
+        gpu_name = device_name
     else:
-        platform = "CUDA"
-        match = re.search(r"(H100|A100|A10|V100|RTX \d+|Tesla [A-Z]\d+)", device_name)
-        gpu_name = match.group(1) if match else device_name.split()[-1]
+        device_name = torch.cuda.get_device_name(0)
+        if "AMD" in device_name or "MI" in device_name or "Radeon" in device_name:
+            platform = "ROCm"
+            match = re.search(r"(MI\d+[A-Za-z]*)", device_name)
+            gpu_name = match.group(1) if match else device_name.split()[-1]
+        else:
+            platform = "CUDA"
+            match = re.search(r"(H100|A100|A10|V100|RTX \d+|Tesla [A-Z]\d+)", device_name)
+            gpu_name = match.group(1) if match else device_name.split()[-1]
 
     return platform, gpu_name
 
