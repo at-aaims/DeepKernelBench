@@ -173,7 +173,7 @@ def grouped_mm_supported_device():
             gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
             return any(arch in gcn_arch for arch in supported_architectures)
         else:
-            return False
+            return torch.cuda.get_device_capability() >= (9, 0) # SM90+
     return False
 
 if __name__ == "__main__":
