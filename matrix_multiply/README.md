@@ -38,11 +38,19 @@ cd ao_float8
 python bench_linear_float8.py -o linear_float8_forgeL.txt --shape_gen_name forgeL
 ```
 
-### Benchmark grouped GEMM operations in BF16 on various MoE models
+### Benchmark PyTorch grouped GEMM operations in BF16 on various MoE models
 ```
 cd grouped_gemm
 python bench_grouped_gemm_torch.py
 ```
+
+### Benchmark Triton grouped GEMM operations in BF16 on various MoE models
+```
+cd grouped_gemm
+python bench_grouped_gemm_triton.py
+python bench_grouped_gemm_triton.py --tma
+```
+
 
 ### Benchmark Primus Turbo grouped GEMM operations in BF16 and FP8 on various MoE models
 ```
