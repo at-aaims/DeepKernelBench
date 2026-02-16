@@ -482,7 +482,7 @@ def benchmark_grouped_gemm_triton(output_csv=None, enable_tma=False):
                     "Forward TFLOPS": "0.00",
                 }
             )
-        break
+        #break
 
     results = pd.DataFrame(rows)
     print("\nFinal Results:")
