@@ -60,6 +60,7 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | tensor_ops | ✅ |✅ | ✅ |✅ |
 | communication | ✅ |✅ | ✅ |✅ |
 | moe | ✅ |✅ | ✅ |✅ |
+| storeKVCache | ✅ |✅ | ✅ |✅ |
 
 ## Reference
 ```
