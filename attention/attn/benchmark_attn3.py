@@ -51,7 +51,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         ref_dk, k.grad = k.grad.clone(), None
         ref_dq, q.grad = q.grad.clone(), None
         # FA implementation
-        fa_out, fa_lse = f(q, k, v, causal=causal)
+        fa_out = f(q, k, v, causal=causal)
         fa_out.backward(dout)
         fa_dv, v.grad = v.grad.clone(), None
         fa_dk, k.grad = k.grad.clone(), None
@@ -132,14 +132,14 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
         q.grad = None
         k.grad = None
         v.grad = None
-        out, lse = f(
+        out = f(
             q,
             k,
             v,
             causal=causal,
             window_size=(-1, -1),
             deterministic=deterministic,
-            #return_attn_probs=False,
+            return_attn_probs=False,
         )
         out.backward(dout)
 
@@ -160,7 +160,7 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
                   causal=causal,
                   window_size=(-1, -1),
                   deterministic=deterministic,
-                  #return_attn_probs=False,
+                  return_attn_probs=False,
                 )
                 if profile:
                     profiler.step()
@@ -170,14 +170,14 @@ def run_benchmark(batch_size, seqlen, num_heads, head_dim,
             q.grad = None
             k.grad = None
             v.grad = None
-            out, lse = f(
+            out = f(
                 q,
                 k,
                 v,
                 causal=causal,
                 window_size=(-1, -1),
                 deterministic=deterministic,
-                #return_attn_probs=False,
+                return_attn_probs=False,
             )
             out.backward(dout)
             if profile:
