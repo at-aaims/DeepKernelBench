@@ -1,8 +1,17 @@
 import os
 import sys
 import torch
-from flash_attn import flash_attn_qkvpacked_func
 import argparse
+
+try:
+    from flash_attn import flash_attn_qkvpacked_func
+except ImportError as e:
+    print(f"Error: Required library is not installed or available. {e}")
+    print("Please install FA2 to run this script.")
+    sys.exit(1)
+except Exception as e:
+    print(f"An unexpected error occurred during import: {e}")
+    sys.exit(1)
 
 parent_dir = ".."
 sys.path.append(parent_dir)
