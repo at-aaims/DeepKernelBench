@@ -1,5 +1,5 @@
 ## Attention operators
-### Benchmark Flash attention2 operations
+### Benchmark Flash attention2 operations (flash_attn_func and flash_attn_qkvpacked_func)
 ```
 python driver.py --bench-script attn.benchmark_attn --csv-file attn/shapes.csv
 python driver.py --bench-script attn.benchmark_attn2 --csv-file attn/shapes.csv
