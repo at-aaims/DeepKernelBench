@@ -2,7 +2,17 @@ import os
 import sys
 import torch
 import argparse
-import aiter
+
+try:
+    import aiter
+except ImportError as e:
+    print(f"Error: Required library is not installed or available. {e}")
+    print("Please install AITER to run this script.")
+    sys.exit(1)
+except Exception as e:
+    print(f"An unexpected error occurred during import: {e}")
+    sys.exit(1)
+
 from aiter.test_mha_common import (
     attention_ref,
     attn_bias_from_alibi_slopes,
