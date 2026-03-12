@@ -10,6 +10,11 @@ python driver.py --bench-script attn.benchmark_attn2 --csv-file attn/shapes.csv
 python driver.py --bench-script attn.benchmark_attn3 --csv-file attn/shapes.csv
 ```
 
+### Benchmark Flash attention4 operations
+```
+python driver.py --bench-script attn.benchmark_attn4 --csv-file attn/shapes.csv
+```
+
 ### Benchmark Torch scaled dot product attention operations
 ```
 python driver.py --bench-script sdpa.benchmark_attn --csv-file sdpa/shapes.csv
