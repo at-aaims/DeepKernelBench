@@ -21,6 +21,12 @@
    pip install -r requirements-xpu.txt
 ```
 
+## Install Flash Attention 3
+```
+git clone https://github.com/Dao-AILab/flash-attention
+cd hopper
+python setup.py install
+```
 
 ## Install Flash Attention with ROCm support 
 ```
