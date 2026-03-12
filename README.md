@@ -21,10 +21,15 @@
    pip install -r requirements-xpu.txt
 ```
 
+## Install Flash Attention 4
+```
+pip install flash-attn-4
+```
+
 ## Install Flash Attention 3
 ```
 git clone https://github.com/Dao-AILab/flash-attention
-cd hopper
+cd flash-attention/hopper
 python setup.py install
 ```
 
