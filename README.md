@@ -52,6 +52,9 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | Benchmark name | Intel B580 (16GB) | AMD MI250X (64GB) | AMD MI300A (128GB) | NVIDIA H100 (80GB) |
 |---|---|---|---|---|
 | attn  | ❌ | ✅ |✅ | ✅ |
+| attn2  | ❌ | ✅ |✅ | ✅ |
+| attn3  | ❌ | ❌ | ❌ | ✅ |
+| attn4  | ❌ | ❌ | ❌ | ✅ |
 | attn_triton | ✅ | ✅ |✅ | ✅ |
 | sdpa | limited| ✅ |✅ | ✅ |
 | flex | ✅ | ✅ |✅ | ✅ |
