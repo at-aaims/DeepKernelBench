@@ -76,6 +76,7 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | moe | ✅ |✅ | ✅ |✅ |
 | storeKVCache | ✅ |✅ | ✅ |✅ |
 | mixtral-moe | ❌ | ✅ | ✅ |✅ |
+| unet | ✅ |✅ | ✅ |✅ |
 
 ## Reference
 ```
