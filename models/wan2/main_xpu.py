@@ -24,7 +24,7 @@ output = pipe(
 
 prompt = "A dog plays with a ball, realistic"
 device = torch.device(f"xpu:0")
-torch.xpu.reset_max_memory_allocated(device)
+torch.xpu.reset_peak_memory_stats(device)
 
 start_time = time.perf_counter()
 output = pipe(
