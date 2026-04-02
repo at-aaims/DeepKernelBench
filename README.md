@@ -77,6 +77,7 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | storeKVCache | ✅ |✅ | ✅ |✅ |
 | mixtral-moe | ❌ | ✅ | ✅ |✅ |
 | unet | ✅ |✅ | ✅ |✅ |
+| wan2 | ✅ |✅ | ✅ |✅ |
 
 ## Reference
 ```
