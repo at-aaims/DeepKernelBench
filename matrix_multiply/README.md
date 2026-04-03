@@ -41,7 +41,8 @@ python bench_linear_float8.py -o linear_float8_forgeL.txt --shape_gen_name forge
 ### Benchmark PyTorch grouped GEMM operations in BF16 on various MoE models
 ```
 cd grouped_gemm
-python bench_grouped_gemm_torch.py
+python bench_grouped_gemm_torch.py       # NVIDIA/AMD GPUs
+python bench_grouped_gemm_torch_xpu.py   # Intel GPUs
 ```
 
 ### Benchmark Triton grouped GEMM operations in BF16 on various MoE models
