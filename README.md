@@ -61,7 +61,7 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | fp8_gemm | ✅ |❌ |✅ | ✅ |
 | semianalysiswork | ✅ |❌ | ✅ |✅|
 | bgemm | ✅ |✅ | ✅ |✅ |
-| group-gemm | ❌ |✅ | ✅ |✅ |
+| group-gemm-torch | ✅ | ✅ | ✅ |✅ |
 | group-gemm-triton | ✅ |✅ | ✅ |✅ |
 | group-gemm-turbo | ❌ | ❌ | ✅ |❌ |
 | gemm | ✅ |✅ | ✅ |✅ |
