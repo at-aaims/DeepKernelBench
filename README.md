@@ -66,7 +66,7 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | group-gemm-turbo | ❌ | ❌ | ✅ |❌ |
 | gemm | ✅ |✅ | ✅ |✅ |
 | int8_gemm | ✅ |✅ | ✅ |✅ |
-| aiter | ❌ |✅ | ✅ |❌|
+| aiter_gemm | ❌ |✅ | ✅ |❌|
 | tritonBLAS | ❌ |✅ | ✅ |❌|
 | vllm | ❌ |❌ | ✅ |✅|
 | geometrics kernel | ✅ |✅ | ✅ |✅ |
