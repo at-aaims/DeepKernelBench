@@ -17,6 +17,8 @@ from torch.nn.attention import sdpa_kernel, SDPBackend
 def device_sync(device):
     if "cuda" in device:
         torch.cuda.synchronize(device)
+    elif "xpu" in device:
+        torch.xpu.synchronize(device)
     elif "cpu" in device:
         pass
     else:
@@ -249,7 +251,7 @@ def main(
         if (i != num_samples - 1 or not profile) or (use_tp and rank != 0):
             prof = contextlib.nullcontext()
         else:
-            torch.profiler._utils._init_for_cuda_graphs()
+            #torch.profiler._utils._init_for_cuda_graphs()
             prof = torch.profiler.profile()
         with prof:
             y = generate(
@@ -283,7 +285,10 @@ def main(
         print(f"Bandwidth achieved: {model_size * tokens_sec / 1e9:.02f} GB/s")
 
     print(f"Average tokens/sec: {torch.mean(torch.tensor(aggregate_metrics['tokens_per_sec'])).item():.2f}")
-    print(f"Memory used: {torch.cuda.max_memory_reserved() / 1e9:.02f} GB")
+    if 'cuda' in devce:
+         print(f"Memory used: {torch.cuda.max_memory_reserved() / 1e9:.02f} GB")
+    if 'xpu' in devce:
+         print(f"Memory used: {torch.xpu.max_memory_reserved() / 1e9:.02f} GB")
 
 
 if __name__ == '__main__':
@@ -300,7 +305,7 @@ if __name__ == '__main__':
     parser.add_argument('--compile', action='store_true', help='Whether to compile the model.')
     parser.add_argument('--compile_prefill', action='store_true', help='Whether to compile the prefill (improves prefill perf, but higher compile times)')
     parser.add_argument('--profile', type=Path, default=None, help='Profile path.')
-    parser.add_argument('--device', type=str, default="cuda", help='device to use')
+    parser.add_argument('--device', type=str, default="cuda", help='device to use (cuda, xpu, cpu)')
 
     args = parser.parse_args()
     main(
