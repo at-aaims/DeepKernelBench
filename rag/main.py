@@ -31,7 +31,7 @@ llm = HuggingFaceLLM(
     # tokenizer_kwargs={},
     generate_kwargs={"do_sample":True, "temperature": 0.7, "top_k": 50, "top_p": 0.95},
     messages_to_prompt=messages_to_prompt,
-    device_map="cuda",
+    device_map="auto",
 )
 
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
