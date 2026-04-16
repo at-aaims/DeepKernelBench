@@ -33,3 +33,7 @@ psutil
 tiktoken
 timm
 flash_attn
+llama-index
+llama-index-llms-huggingface
+llama-index-embeddings-huggingface
+llama-index-readers-web
