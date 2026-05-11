@@ -1,0 +1,391 @@
+{#
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+#}
+
+TRITON KERNEL PROGRAMMING GUIDELINES:
+
+1. KERNEL STRUCTURE:
+   - Use @triton.jit decorator for kernel functions
+   - Function name must be 'kernel_function' (or as specified)
+   - Use tl.constexpr for compile-time constants (BLOCK_SIZE, etc.)
+   - Include proper type hints and launch metadata when needed
+
+2. MEMORY ACCESS PATTERNS:
+   - Use tl.load and tl.store with proper masking
+   - Coalesce memory accesses for optimal performance
+   - Use tensor descriptors for advanced memory operations (TMA)
+   - Handle boundary conditions with masks
+
+3. INDEXING AND GRID:
+   - Use tl.program_id(axis) for block indices
+   - Calculate offsets: pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+   - Use tl.cdiv for ceiling division
+   - Always mask for out-of-bounds protection
+
+4. OPTIMIZATION TECHNIQUES:
+   - Use @triton.autotune for automatic configuration selection
+   - Choose appropriate BLOCK_SIZE (powers of 2: 64, 128, 256, 512, 1024)
+   - Leverage tensor cores with tl.dot for matrix operations
+   - Use warp specialization for better scheduling
+   - Consider epilogue subtiling to reduce shared memory usage
+   - Aggressively fuse compatible operator stages to minimize memory traffic and kernel launch overhead; only keep stages separate if fusion is infeasible
+
+5. COMMON PATTERNS:
+   a) Elementwise operations: Load -> Compute -> Store
+   b) Reductions: Use tl.reduce with proper axis
+   c) Matrix multiplication: Use tl.dot with accumulator
+   d) Softmax: Online normalization for numerical stability
+   e) Fused operations: Combine multiple ops in single kernel and document the fused stages for reviewers
+     - BN inside fused conv:
+      - bn_mean_f32 = tl.load(mean_ptr + oc).to(tl.float32)
+      - bn_var_f32 = tl.load(var_ptr + oc).to(tl.float32)
+      - gamma_f32 = tl.load(gamma_ptr + oc).to(tl.float32)
+      - beta_f32  = tl.load(beta_ptr + oc).to(tl.float32)
+      - acc_f32   = acc.to(tl.float32)  # conv accumulator
+      - x_norm    = (acc_f32 - bn_mean_f32) / tl.sqrt(bn_var_f32 + eps)
+      - out_f32   = x_norm * gamma_f32 + beta_f32
+      - tl.store(out_ptr + out_idx, out_f32.to(out_ptr.dtype.element_ty), mask=mask)
+     - LayerNorm per row:
+      - mean_f32 = tl.zeros((), dtype=tl.float32)
+      - var_f32  = tl.zeros((), dtype=tl.float32)
+      - accumulate in fp32; use tl.sqrt(var_f32 + eps); cast on store.
+
+6. ADVANCED FEATURES:
+   - Persistent kernels for better SM utilization
+   - Tensor Memory Accelerator (TMA) descriptors
+   - Multi-stage pipelines with num_stages
+   - Warp specialization with warp_specialize parameter
+
+7. RUNTIME CONSTRAINTS:
+   - Wrappers: validate/allocate/launch only; no math.
+   - All compute runs in Triton kernels; no torch.nn, torch.nn.functional (e.g., F.*), or other PyTorch compute ops, including general tensor-tensor math like torch.matmul/mm/bmm/einsum or their Tensor method forms, and no low-level torch.ops.aten.* calls (e.g., torch.ops.aten.conv2d, torch.ops.aten.layer_norm, torch.ops.aten.addmm, torch.ops.aten.mean).
+   - PyTorch allowed only for allocation, dtype/device checks, and packaging results.
+
+Here are real examples of Triton kernels:
+
+## Example 1: Persistent Matrix Multiplication
+
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _compute_pid(tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS):
+    group_id = tile_id // num_pid_in_group
+    first_pid_m = group_id * GROUP_SIZE_M
+    group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
+    pid_m = first_pid_m + (tile_id % group_size_m)
+    pid_n = (tile_id % num_pid_in_group) // group_size_m
+    return pid_m, pid_n
+
+
+@triton.autotune(
+    configs=matmul_get_configs(),
+    key=["M", "N", "K"],
+)
+@triton.jit(launch_metadata=_matmul_launch_metadata)
+def matmul_kernel_persistent(a_ptr, b_ptr, c_ptr,  #
+                             M, N, K,  #
+                             stride_am, stride_ak,  #
+                             stride_bk, stride_bn,  #
+                             stride_cm, stride_cn,  #
+                             BLOCK_SIZE_M: tl.constexpr,  #
+                             BLOCK_SIZE_N: tl.constexpr,  #
+                             BLOCK_SIZE_K: tl.constexpr,  #
+                             GROUP_SIZE_M: tl.constexpr,  #
+                             NUM_SMS: tl.constexpr,  #
+                             ):
+    start_pid = tl.program_id(axis=0)
+    num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
+    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
+    k_tiles = tl.cdiv(K, BLOCK_SIZE_K)
+    num_tiles = num_pid_m * num_pid_n
+
+    # NOTE: There is currently a bug in blackwell pipelining that means it can't handle a value being
+    # used in both the prologue and epilogue, so we duplicate the counters as a work-around.
+    tile_id_c = start_pid - NUM_SMS
+
+    offs_k_for_mask = tl.arange(0, BLOCK_SIZE_K)
+    num_pid_in_group = GROUP_SIZE_M * num_pid_n
+
+    for tile_id in tl.range(start_pid, num_tiles, NUM_SMS, flatten=True):
+        pid_m, pid_n = _compute_pid(tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
+        start_m = pid_m * BLOCK_SIZE_M
+        start_n = pid_n * BLOCK_SIZE_N
+        offs_am = start_m + tl.arange(0, BLOCK_SIZE_M)
+        offs_bn = start_n + tl.arange(0, BLOCK_SIZE_N)
+        offs_am = tl.where(offs_am < M, offs_am, 0)
+        offs_bn = tl.where(offs_bn < N, offs_bn, 0)
+        offs_am = tl.max_contiguous(tl.multiple_of(offs_am, BLOCK_SIZE_M), BLOCK_SIZE_M)
+        offs_bn = tl.max_contiguous(tl.multiple_of(offs_bn, BLOCK_SIZE_N), BLOCK_SIZE_N)
+
+        accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+        for ki in range(k_tiles):
+            offs_k = ki * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
+            a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+            b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+
+            a = tl.load(a_ptrs, mask=offs_k_for_mask[None, :] < K - ki * BLOCK_SIZE_K, other=0.0)
+            b = tl.load(b_ptrs, mask=offs_k_for_mask[:, None] < K - ki * BLOCK_SIZE_K, other=0.0)
+            accumulator = tl.dot(a, b, accumulator)
+
+        tile_id_c += NUM_SMS
+        pid_m, pid_n = _compute_pid(tile_id_c, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
+        offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+        offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+        c_ptrs = c_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
+        c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
+        if (c_ptr.dtype.element_ty == tl.float8e4nv):
+            c = accumulator.to(tl.float8e4nv)
+        else:
+            c = accumulator.to(tl.float16)
+        tl.store(c_ptrs, c, mask=c_mask)
+
+
+def matmul_persistent(a, b):
+    # Check constraints.
+    assert a.shape[1] == b.shape[0], "Incompatible dimensions"
+    assert a.dtype == b.dtype, "Incompatible dtypes"
+    NUM_SMS = torch.cuda.get_device_properties("cuda").multi_processor_count
+    M, K = a.shape
+    K, N = b.shape
+    dtype = a.dtype
+    # Allocates output.
+    c = torch.empty((M, N), device=a.device, dtype=dtype)
+    # 1D launch kernel where each block gets its own program.
+    grid = lambda META: (min(NUM_SMS, triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"])), )
+    matmul_kernel_persistent[grid](
+        a, b, c,  #
+        M, N, K,  #
+        a.stride(0), a.stride(1),  #
+        b.stride(0), b.stride(1),  #
+        c.stride(0), c.stride(1),  #
+        NUM_SMS=NUM_SMS,  #
+    )
+    return c
+
+## Example 2: Fused Attention Forward
+
+```python
+import torch
+import triton
+import triton.language as tl
+from triton.tools.tensor_descriptor import TensorDescriptor
+
+@triton.jit
+def _attn_fwd_inner(acc, l_i, m_i, q,  #
+                    desc_k, desc_v,  #
+                    offset_y, dtype: tl.constexpr, start_m, qk_scale,  #
+                    BLOCK_M: tl.constexpr, HEAD_DIM: tl.constexpr, BLOCK_N: tl.constexpr,  #
+                    STAGE: tl.constexpr, offs_m: tl.constexpr, offs_n: tl.constexpr,  #
+                    N_CTX: tl.constexpr, warp_specialize: tl.constexpr):
+    # range of values handled by this stage
+    if STAGE == 1:
+        lo, hi = 0, start_m * BLOCK_M
+    elif STAGE == 2:
+        lo, hi = start_m * BLOCK_M, (start_m + 1) * BLOCK_M
+        lo = tl.multiple_of(lo, BLOCK_M)
+    # causal = False
+    else:
+        lo, hi = 0, N_CTX
+    offsetk_y = offset_y + lo
+    if dtype == tl.float8e5:
+        offsetv_y = offset_y * HEAD_DIM + lo
+    else:
+        offsetv_y = offset_y + lo
+    # loop over k, v and update accumulator
+    for start_n in tl.range(lo, hi, BLOCK_N, warp_specialize=warp_specialize):
+        start_n = tl.multiple_of(start_n, BLOCK_N)
+        # -- compute qk ----
+        k = desc_k.load([offsetk_y, 0]).T
+        qk = tl.dot(q, k)
+        if STAGE == 2:
+            mask = offs_m[:, None] >= (start_n + offs_n[None, :])
+            qk = qk * qk_scale + tl.where(mask, 0, -1.0e6)
+            m_ij = tl.maximum(m_i, tl.max(qk, 1))
+            qk -= m_ij[:, None]
+        else:
+            m_ij = tl.maximum(m_i, tl.max(qk, 1) * qk_scale)
+            qk = qk * qk_scale - m_ij[:, None]
+        p = tl.math.exp2(qk)
+        # -- compute correction factor
+        alpha = tl.math.exp2(m_i - m_ij)
+        l_ij = tl.sum(p, 1)
+        # -- update output accumulator --
+        acc = acc * alpha[:, None]
+        # prepare p and v for the dot
+        if dtype == tl.float8e5:
+            v = desc_v.load([0, offsetv_y]).T
+        else:
+            v = desc_v.load([offsetv_y, 0])
+        p = p.to(dtype)
+        acc = tl.dot(p, v, acc)
+        # update m_i and l_i
+        l_i = l_i * alpha + l_ij
+        m_i = m_ij
+        offsetk_y += BLOCK_N
+        offsetv_y += BLOCK_N
+    return acc, l_i, m_i
+
+@triton.jit
+def _maybe_make_tensor_desc(desc_or_ptr, shape, strides, block_shape):
+    if isinstance(desc_or_ptr, tl.tensor_descriptor):
+        return desc_or_ptr
+    else:
+        return tl.make_tensor_descriptor(desc_or_ptr, shape, strides, block_shape)
+
+configs = [
+    triton.Config({'BLOCK_M': BM, 'BLOCK_N': BN}, num_stages=s, num_warps=w) \
+    for BM in [64, 128]\
+    for BN in [32, 64, 128]\
+    for s in [2, 3, 4] \
+    for w in [4, 8]\
+]
+
+@triton.autotune(configs=configs, key=["N_CTX", "HEAD_DIM", "FP8_OUTPUT", "warp_specialize"])
+@triton.jit
+def _attn_fwd(sm_scale, M,  #
+              Z, H, desc_q, desc_k, desc_v, desc_o, N_CTX,  #
+              HEAD_DIM: tl.constexpr,  #
+              BLOCK_M: tl.constexpr,  #
+              BLOCK_N: tl.constexpr,  #
+              FP8_OUTPUT: tl.constexpr,  #
+              STAGE: tl.constexpr,  #
+              warp_specialize: tl.constexpr,  #
+              ):
+    dtype = tl.float8e5 if FP8_OUTPUT else tl.float16
+    tl.static_assert(BLOCK_N <= HEAD_DIM)
+    start_m = tl.program_id(0)
+    off_hz = tl.program_id(1)
+    off_z = off_hz // H
+    off_h = off_hz % H
+
+    y_dim = Z * H * N_CTX
+    desc_q = _maybe_make_tensor_desc(desc_q, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                     block_shape=[BLOCK_M, HEAD_DIM])
+    if FP8_OUTPUT:
+        desc_v = _maybe_make_tensor_desc(desc_v, shape=[HEAD_DIM, y_dim], strides=[N_CTX, 1],
+                                         block_shape=[HEAD_DIM, BLOCK_N])
+    else:
+        desc_v = _maybe_make_tensor_desc(desc_v, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                         block_shape=[BLOCK_N, HEAD_DIM])
+    desc_k = _maybe_make_tensor_desc(desc_k, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                     block_shape=[BLOCK_N, HEAD_DIM])
+    desc_o = _maybe_make_tensor_desc(desc_o, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                     block_shape=[BLOCK_M, HEAD_DIM])
+
+    offset_y = off_z * (N_CTX * H) + off_h * N_CTX
+    qo_offset_y = offset_y + start_m * BLOCK_M
+    # initialize offsets
+    offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = tl.arange(0, BLOCK_N)
+    # initialize pointer to m and l
+    m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
+    l_i = tl.zeros([BLOCK_M], dtype=tl.float32) + 1.0
+    acc = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)
+    # load scales
+    qk_scale = sm_scale
+    qk_scale *= 1.44269504  # 1/log(2)
+    # load q: it will stay in SRAM throughout
+    q = desc_q.load([qo_offset_y, 0])
+    # stage 1: off-band
+    if STAGE & 1:
+        acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q,  #
+                                        desc_k, desc_v,  #
+                                        offset_y, dtype, start_m, qk_scale,  #
+                                        BLOCK_M, HEAD_DIM, BLOCK_N,  #
+                                        4 - STAGE, offs_m, offs_n, N_CTX,  #
+                                        warp_specialize)
+    # stage 2: on-band
+    if STAGE & 2:
+        acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q,  #
+                                        desc_k, desc_v,  #
+                                        offset_y, dtype, start_m, qk_scale,  #
+                                        BLOCK_M, HEAD_DIM, BLOCK_N,  #
+                                        2, offs_m, offs_n, N_CTX,  #
+                                        warp_specialize)
+    # epilogue
+    m_i += tl.math.log2(l_i)
+    acc = acc / l_i[:, None]
+    m_ptrs = M + off_hz * N_CTX + offs_m
+    tl.store(m_ptrs, m_i)
+    desc_o.store([qo_offset_y, 0], acc.to(dtype))
+
+class _attention(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, q, k, v, causal, sm_scale, warp_specialize=True):
+        # shape constraints
+        HEAD_DIM_Q, HEAD_DIM_K = q.shape[-1], k.shape[-1]
+        HEAD_DIM_V = v.shape[-1]
+        assert HEAD_DIM_Q == HEAD_DIM_K and HEAD_DIM_K == HEAD_DIM_V
+        assert HEAD_DIM_K in {16, 32, 64, 128, 256}
+        o = torch.empty_like(q)
+        stage = 3 if causal else 1
+
+        M = torch.empty((q.shape[0], q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32)
+        
+        y_dim = q.shape[0] * q.shape[1] * q.shape[2]
+        dummy_block = [1, 1]
+        desc_q = TensorDescriptor(q, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1], block_shape=dummy_block)
+        if q.dtype == torch.float8_e5m2:
+            desc_v = TensorDescriptor(v, shape=[HEAD_DIM_K, y_dim], strides=[q.shape[2], 1],
+                                      block_shape=dummy_block)
+        else:
+            desc_v = TensorDescriptor(v, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1],
+                                      block_shape=dummy_block)
+        desc_k = TensorDescriptor(k, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1], block_shape=dummy_block)
+        desc_o = TensorDescriptor(o, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1], block_shape=dummy_block)
+
+        def grid(META):
+            return (triton.cdiv(q.shape[2], META["BLOCK_M"]), q.shape[0] * q.shape[1], 1)
+
+        _attn_fwd[grid](
+            sm_scale, M,  #
+            q.shape[0], q.shape[1],  #
+            desc_q, desc_k, desc_v, desc_o,  #
+            N_CTX=q.shape[2],  #
+            HEAD_DIM=HEAD_DIM_K,  #
+            FP8_OUTPUT=q.dtype == torch.float8_e5m2,  #
+            STAGE=stage,  #
+            warp_specialize=warp_specialize,  #
+        )
+
+        ctx.save_for_backward(q, k, v, o, M)
+        ctx.sm_scale = sm_scale
+        ctx.HEAD_DIM = HEAD_DIM_K
+        ctx.causal = causal
+        return o
+
+attention = _attention.apply
+
+def fused_attention(q, k, v, causal=True, sm_scale=None):
+    """
+    Fused attention implementation using Triton.
+    
+    Args:
+        q: Query tensor [batch, heads, seq_len, head_dim]
+        k: Key tensor [batch, heads, seq_len, head_dim]  
+        v: Value tensor [batch, heads, seq_len, head_dim]
+        causal: Whether to use causal masking
+        sm_scale: Softmax scale factor (default: 1/sqrt(head_dim))
+        
+    Returns:
+        Output tensor [batch, heads, seq_len, head_dim]
+    """
+    if sm_scale is None:
+        sm_scale = 1.0 / (q.shape[-1] ** 0.5)
+    
+    return attention(q, k, v, causal, sm_scale)

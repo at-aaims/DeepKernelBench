@@ -1,0 +1,685 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Verification Worker for testing and refining individual kernels."""
+
+import json
+import logging
+import multiprocessing as mp
+import os
+import re
+import subprocess
+import sys
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from triton_kernel_agent.platform_config import get_platform
+from triton_kernel_agent.worker_util import format_test_code_for_llm
+from utils.providers import get_model_provider
+
+from .prompt_manager import PromptManager
+from .worker_util import _run_test_multiprocess
+
+
+DISALLOWED_TORCH_PATTERNS = [
+    (
+        re.compile(r"\bimport\s+torch\.nn(\b|\s+as\b)"),
+        "importing torch.nn modules is not allowed",
+    ),
+    (
+        re.compile(r"\bfrom\s+torch\s+import\s+nn\b"),
+        "importing torch.nn modules is not allowed",
+    ),
+    (
+        re.compile(r"\bimport\s+torch\.nn\.functional\s+as\s+F\b"),
+        "aliasing torch.nn.functional as F is not allowed",
+    ),
+    (re.compile(r"\btorch\.nn\."), "torch.nn module usage is not allowed"),
+    (
+        re.compile(r"\btorch\.nn\.functional\b"),
+        "torch.nn.functional usage is not allowed",
+    ),
+    (
+        re.compile(r"\bF\.[A-Za-z_]+\("),
+        "torch.nn.functional alias calls (F.*) are not allowed",
+    ),
+    (re.compile(r"\btorch\.conv"), "torch convolution helpers are not allowed"),
+    (
+        re.compile(
+            r"\btorch\.(relu|sigmoid|tanh|softmax|gelu|mish|hardtanh|max_pool|avg_pool)[A-Za-z0-9_]*\("
+        ),
+        "PyTorch activation/pooling helpers are not allowed",
+    ),
+    (
+        re.compile(r"\bclass\s+\w+\s*\(\s*nn\.Module"),
+        "Subclassing torch.nn.Module is not allowed",
+    ),
+    (
+        re.compile(r"\.forward\("),
+        "Calling .forward() indicates torch.nn module usage and is not allowed",
+    ),
+    (
+        re.compile(r"\btorch\.ops\.aten\b"),
+        "Low-level torch.ops.aten.* calls are not allowed; implement these ops directly in Triton kernels instead of relying on PyTorch compute",
+    ),
+    # Generic tensor-tensor math that must be implemented in Triton kernels
+    (
+        re.compile(r"\btorch\.(matmul|mm|bmm)\s*\("),
+        "PyTorch matmul/mm/bmm tensor-tensor ops are not allowed; implement these in Triton kernels",
+    ),
+    (
+        re.compile(r"\.(matmul|mm|bmm)\s*\("),
+        "Tensor.matmul/mm/bmm methods are not allowed; implement these in Triton kernels",
+    ),
+    (
+        re.compile(r"\btorch\.einsum\s*\("),
+        "torch.einsum is not allowed; implement this contraction with Triton primitives",
+    ),
+    (
+        re.compile(r"\.einsum\s*\("),
+        "Tensor.einsum is not allowed; implement this contraction with Triton primitives",
+    ),
+    # Introspection / frame inspection that can be used to steal test locals
+    (
+        re.compile(r"\bimport\s+inspect\b"),
+        "inspect-based reflection is not allowed inside kernel files",
+    ),
+    (
+        re.compile(r"\binspect\.(stack|currentframe|getouterframes)\s*\("),
+        "inspect stack/frame introspection is not allowed in kernels",
+    ),
+    (
+        re.compile(r"\bsys\._getframe\s*\("),
+        "sys._getframe is not allowed in kernels; do not access caller frames",
+    ),
+    (
+        re.compile(r"\.f_locals\b|\.f_globals\b"),
+        "Accessing frame locals/globals (f_locals/f_globals) from kernels is not allowed",
+    ),
+    (
+        re.compile(r"\bglobals\s*\("),
+        "globals() is not allowed in kernels; avoid depending on ambient test state",
+    ),
+    (
+        re.compile(r"\blocals\s*\("),
+        "locals() is not allowed in kernels; avoid depending on caller scopes",
+    ),
+]
+
+
+class VerificationWorker:
+    """Worker that verifies and refines a single kernel implementation."""
+
+    def __init__(
+        self,
+        worker_id: int,
+        workdir: Path,
+        log_dir: Path,
+        max_rounds: int = 10,
+        history_size: int = 8,
+        openai_api_key: str | None = None,
+        openai_model: str = "gpt-5",
+        high_reasoning_effort: bool = True,
+        target_platform: str = "cuda",
+        no_cusolver: bool = False,
+        test_timeout_s: int = 30,
+    ):
+        """
+        Initialize a verification worker.
+
+        Args:
+            worker_id: Unique identifier for this worker
+            workdir: Working directory for this worker
+            log_dir: Directory for logging
+            max_rounds: Maximum refinement rounds
+            history_size: Number of recent rounds to keep
+            openai_api_key: OpenAI API key for refinement
+            openai_model: Model name for refinement
+            high_reasoning_effort: Whether to use high reasoning effort for OpenAI models
+            target_platform: Target platform default: cuda
+            no_cusolver: If True, disables cuSolver library usage
+            test_timeout_s: Timeout in seconds for test execution
+        """
+        self.worker_id = worker_id
+        self.workdir = Path(workdir)
+        self.log_dir = Path(log_dir)
+        self.max_rounds = max_rounds
+        self.history_size = history_size
+        self.openai_model = openai_model
+        self.high_reasoning_effort = high_reasoning_effort
+        self._platform_config = get_platform(target_platform)
+        self.no_cusolver = no_cusolver
+        self.test_timeout_s = test_timeout_s
+
+        # Setup files
+        self.kernel_file = self.workdir / "kernel.py"
+        self.test_files: list[Path] = []
+
+        # History for LLM context
+        self.history = deque(maxlen=history_size)
+
+        # Setup logging early so it is available for any error paths
+        self._setup_logging()
+
+        # Initialize prompt manager with resolved config
+        self.prompt_manager = PromptManager(target_platform=self._platform_config)
+
+        # Initialize provider (may be unavailable in offline/test environments)
+        self.provider = None
+        try:
+            self.provider = get_model_provider(self.openai_model)
+        except ValueError as e:
+            # Provider not available, will use mock mode
+            self.logger.warning(f"Provider not available: {e}")
+
+    def _setup_logging(self):
+        """Setup worker-specific logging."""
+        log_file = self.log_dir / f"worker_{self.worker_id}.log"
+        self.logger = logging.getLogger(f"worker_{self.worker_id}")
+        self.logger.setLevel(logging.INFO)
+
+        handler = logging.FileHandler(log_file)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
+
+    def _extract_code_from_response(
+        self,
+        response_text: str,
+        language: str = "python",
+        prefer_kernel_function: bool = False,
+    ) -> str | None:
+        """
+        Extract code from LLM response text.
+
+        Args:
+            response_text: The full LLM response text
+            language: The expected language (default: python)
+            prefer_kernel_function: When True and multiple code blocks are
+                found, prefer the block that defines ``kernel_function``
+                (falling back to the longest block).  Use this when the
+                prompt contains additional test code that the LLM may echo
+                back.
+
+        Returns:
+            Extracted code or None if no valid code block found
+        """
+        if not response_text:
+            return None
+
+        # First, try to find code blocks with language markers
+        # Pattern matches ```python or ```language_name
+        pattern = rf"```{language}\s*\n(.*?)```"
+        matches = re.findall(pattern, response_text, re.DOTALL)
+
+        if not matches:
+            # Try generic code blocks without language marker
+            pattern = r"```\s*\n(.*?)```"
+            matches = re.findall(pattern, response_text, re.DOTALL)
+
+        if matches:
+            if prefer_kernel_function and len(matches) > 1:
+                # When additional tests are in the prompt the LLM may echo
+                # wrapper code.  Prefer the block defining kernel_function.
+                for block in matches:
+                    if re.search(r"\bdef\s+kernel_function\b", block):
+                        return block.strip()
+                # Fallback: return the longest block
+                return max(matches, key=len).strip()
+            # Default: return the first match
+            return matches[0].strip()
+
+        # If no code blocks found, check if the entire response looks like code
+        # This is a fallback for cases where LLM doesn't use code blocks
+        lines = response_text.strip().split("\n")
+
+        # Simple heuristic: if response contains import statements or function definitions
+        code_indicators = ["import ", "from ", "def ", "class ", "@", '"""', "'''"]
+        if any(
+            line.strip().startswith(indicator)
+            for line in lines
+            for indicator in code_indicators
+        ):
+            # Likely the entire response is code
+            return response_text.strip()
+
+        # No code found
+        self.logger.warning("No code block found in LLM response")
+        return None
+
+    def _write_kernel(self, kernel_code: str):
+        """Write only the kernel code to file."""
+        self.kernel_file.write_text(kernel_code)
+        self.logger.info("Updated kernel file")
+
+    def _write_files(self, kernel_code: str, test_code: list[str]):
+        """Write kernel and test code to files.
+
+        Note: The test code should import the kernel function from the kernel file:
+            from kernel import kernel_function
+
+        Both files are written to the same directory (workdir).
+
+        Args:
+            kernel_code: The kernel source code.
+            test_code: List of test code strings. ``test_code[0]`` is the
+                primary test written to ``test_kernel.py``; any subsequent
+                entries are written to ``test_extra_{i}_kernel.py``.
+        """
+        self.kernel_file.write_text(kernel_code)
+        self.test_files = []
+        for i, code in enumerate(test_code):
+            name = "test_kernel.py" if i == 0 else f"test_extra_{i}_kernel.py"
+            path = self.workdir / name
+            path.write_text(code)
+            self.test_files.append(path)
+        self.logger.info("Wrote kernel and %d test file(s)", len(self.test_files))
+
+    def _strip_comments_and_strings(self, code: str) -> str:
+        """Remove comments and docstrings to avoid false positives when scanning code."""
+        pattern = re.compile(r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|#.*)')
+        return re.sub(pattern, "", code)
+
+    def _detect_pytorch_compute(self, kernel_code: str) -> str | None:
+        """Detect disallowed PyTorch usage inside the kernel wrapper."""
+        sanitized = self._strip_comments_and_strings(kernel_code)
+        for pattern, message in DISALLOWED_TORCH_PATTERNS:
+            if pattern.search(sanitized):
+                return message
+        return None
+
+    def _run_test(self) -> tuple[bool, str, str]:
+        """
+        Run all test scripts sequentially (``&&`` semantics).
+
+        Returns:
+            Tuple of (success, stdout, stderr)
+        """
+        try:
+            for test_file in self.test_files:
+                if not test_file.exists():
+                    continue
+                result = subprocess.run(
+                    [sys.executable, str(test_file)],
+                    cwd=str(self.workdir),
+                    capture_output=True,
+                    text=True,
+                    timeout=self.test_timeout_s,
+                )
+                if result.returncode != 0:
+                    self.logger.error(
+                        "Test %s failed. Exit code: %s, stderr: %s",
+                        test_file.name,
+                        result.returncode,
+                        result.stderr[:2000],
+                    )
+                    return False, result.stdout, result.stderr
+                self.logger.info("Test %s passed", test_file.name)
+
+            return True, result.stdout, result.stderr
+
+        except subprocess.TimeoutExpired:
+            self.logger.error("Test timed out")
+            return (
+                False,
+                "",
+                f"Test execution timed out after {self.test_timeout_s} seconds",
+            )
+        except Exception as e:
+            self.logger.error(f"Test execution error: {e}")
+            return False, "", str(e)
+
+    def _call_llm(self, messages: list, **kwargs) -> str:
+        """
+        Call the LLM provider for the configured model.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            **kwargs: Additional parameters for the API call
+
+        Returns:
+            Generated response text
+        """
+        if not self.provider:
+            raise RuntimeError(f"No provider available for model {self.openai_model}")
+
+        # Add high_reasoning_effort to kwargs if set
+        if self.high_reasoning_effort:
+            kwargs["high_reasoning_effort"] = True
+
+        response = self.provider.get_response(self.openai_model, messages, **kwargs)
+        return response.content
+
+    def _refine_kernel(
+        self,
+        kernel_code: str,
+        error_info: dict[str, str],
+        problem_description: str,
+        test_code: str,
+    ) -> str:
+        """
+        Refine kernel based on error information using OpenAI API.
+
+        Uses multi-turn dialogue by incorporating history of previous attempts.
+        """
+        if self.provider:
+            try:
+                self.logger.info(f"Refining kernel using {self.openai_model}")
+
+                # Build context from history
+                history_context = ""
+                if self.history:
+                    history_context = "\n\nPREVIOUS ATTEMPTS:\n"
+                    for i, round_data in enumerate(self.history):
+                        history_context += f"\nAttempt {i + 1}:\n"
+                        history_context += f"Kernel code:\n```python\n{round_data['kernel_code'][:500]}...\n```\n"
+                        if round_data.get("stderr"):
+                            history_context += f"Error: {round_data['stderr'][:2000]}\n"
+                        if round_data.get("stdout"):
+                            history_context += (
+                                f"Output: {round_data['stdout'][:1000]}\n"
+                            )
+
+                # Create refinement prompt using template
+                prompt = self.prompt_manager.render_kernel_refinement_prompt(
+                    problem_description=problem_description,
+                    test_code=test_code,
+                    kernel_code=kernel_code,
+                    error_info=error_info,
+                    history_context=history_context,
+                    no_cusolver=self.no_cusolver,
+                )
+
+                # Call LLM API
+                messages = [{"role": "user", "content": prompt}]
+                response_text = self._call_llm(messages, max_tokens=20000)
+
+                # Extract refined kernel from response
+                refined_kernel = self._extract_code_from_response(
+                    response_text,
+                    prefer_kernel_function=getattr(self, "_has_multiple_tests", False),
+                )
+
+                if refined_kernel:
+                    self.logger.info(
+                        f"Successfully refined kernel using {self.openai_model}"
+                    )
+                    return refined_kernel
+                else:
+                    self.logger.error("Failed to extract valid code from LLM response")
+                    # Return original kernel if extraction fails
+                    return kernel_code
+
+            except Exception as e:
+                self.logger.error(f"Error refining kernel with LLM API: {e}")
+                # Fall back to mock refinement
+
+        # Mock refinement (fallback)
+        self.logger.info("Refining kernel (mock implementation)")
+
+        # For testing, make a simple modification
+        if "error" in error_info.get("stderr", "").lower():
+            # Add a comment to show refinement happened
+            return f"# Refinement attempt {len(self.history) + 1}\n{kernel_code}"
+
+        return kernel_code
+
+    def _log_round(
+        self, round_num: int, success: bool, kernel_code: str, stdout: str, stderr: str
+    ):
+        """Log the results of a verification round."""
+        round_data = {
+            "round": round_num,
+            "timestamp": datetime.now().isoformat(),
+            "success": success,
+            "kernel_code": kernel_code,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+
+        # Save to log file
+        round_log_file = self.log_dir / f"round_{round_num}.json"
+        with open(round_log_file, "w") as f:
+            json.dump(round_data, f, indent=2)
+
+        # Add to history
+        self.history.append(round_data)
+
+    def run(
+        self,
+        kernel_code: str,
+        test_code: list[str],
+        problem_description: str,
+        success_event: mp.Event,
+    ) -> dict[str, Any]:
+        """
+        Run verification and refinement loop.
+
+        Args:
+            kernel_code: Initial kernel implementation
+            test_code: List of test code strings (primary + additional tests)
+            problem_description: Problem description for context
+            success_event: Shared event to check if another worker succeeded
+
+        Returns:
+            Dictionary with results
+        """
+        self.logger.info(f"Starting verification for worker {self.worker_id}")
+        self._has_multiple_tests = len(test_code) > 1
+
+        current_kernel = kernel_code
+
+        for round_num in range(self.max_rounds):
+            # Check if another worker has succeeded
+            if success_event.is_set():
+                self.logger.info("Another worker succeeded, stopping")
+                return {
+                    "worker_id": self.worker_id,
+                    "success": False,
+                    "stopped_early": True,
+                    "rounds": round_num,
+                }
+
+            self.logger.info(f"Round {round_num + 1}/{self.max_rounds}")
+
+            # Write files - test only on first round, kernel every round
+            if round_num == 0:
+                # First round: write both kernel and test(s)
+                self._write_files(current_kernel, test_code)
+            else:
+                # Subsequent rounds: only update kernel, test remains unchanged
+                self._write_kernel(current_kernel)
+
+            # Run verification (additional tests chained automatically by _run_test)
+            success, stdout, stderr, violation = self._single_verification_pass(
+                current_kernel
+            )
+
+            if violation:
+                self._log_round(round_num + 1, False, current_kernel, "", violation)
+                error_info = {
+                    "stdout": "",
+                    "stderr": violation,
+                    "history": list(self.history),
+                }
+                current_kernel = self._refine_kernel(
+                    current_kernel,
+                    error_info,
+                    problem_description,
+                    format_test_code_for_llm(test_code),
+                )
+                continue
+
+            # Log round
+            self._log_round(round_num + 1, success, current_kernel, stdout, stderr)
+
+            if success:
+                self.logger.info(
+                    f"Success! Kernel passed test in round {round_num + 1}"
+                )
+                return {
+                    "worker_id": self.worker_id,
+                    "success": True,
+                    "kernel_code": current_kernel,
+                    "rounds": round_num + 1,
+                    "history": list(self.history),
+                }
+
+            # Refine kernel for next round
+            error_info = {
+                "stdout": stdout,
+                "stderr": stderr,
+                "history": list(self.history),
+            }
+
+            current_kernel = self._refine_kernel(
+                current_kernel,
+                error_info,
+                problem_description,
+                format_test_code_for_llm(test_code),
+            )
+
+        # Max rounds reached without success
+        self.logger.warning(f"Max rounds ({self.max_rounds}) reached without success")
+        return {
+            "worker_id": self.worker_id,
+            "success": False,
+            "max_rounds_reached": True,
+            "rounds": self.max_rounds,
+            "history": list(self.history),
+        }
+
+    def _single_verification_pass(
+        self, kernel_code: str
+    ) -> tuple[bool, str, str, str | None]:
+        """
+        Run a single verification pass on the kernel.
+
+        Returns:
+            Tuple of (success, stdout, stderr, violation_message)
+            - violation_message is set if PyTorch usage detected, None otherwise
+        """
+        violation = self._detect_pytorch_compute(kernel_code)
+        if violation:
+            message = f"Disallowed PyTorch usage detected: {violation}"
+            self.logger.error(message)
+            return False, "", message, message
+
+        success, stdout, stderr = (
+            self._run_test()
+            if os.getenv("KA_PROCESS_USE_SYS_EXECUTABLE", "1") == "1"
+            else _run_test_multiprocess(
+                self.logger,
+                self.workdir,
+                self.test_files,
+            )
+        )
+
+        return success, stdout, stderr, None
+
+    def verify_with_refinement(
+        self,
+        kernel_code: str,
+        test_code: list[str],
+        problem_description: str,
+        max_refine_attempts: int = 3,
+    ) -> tuple[bool, str, str]:
+        """
+        Verify kernel correctness with refinement attempts.
+
+        This is a simpler API for single-pass verification with refinement,
+        useful for optimization loops that manage their own iteration.
+
+        Args:
+            kernel_code: Kernel code to verify
+            test_code: List of test code strings (primary + additional tests)
+            problem_description: Problem description for refinement context
+            max_refine_attempts: Maximum refinement attempts if verification fails
+
+        Returns:
+            Tuple of (success, final_kernel_code, error_feedback)
+            - success: Whether the kernel passed verification
+            - final_kernel_code: The verified (possibly refined) kernel
+            - error_feedback: Error message if failed, empty string if success
+        """
+        current_kernel = kernel_code
+        self._has_multiple_tests = len(test_code) > 1
+
+        # Write files for testing (primary + additional tests)
+        self._write_files(current_kernel, test_code)
+
+        # Initial verification (additional tests chained automatically by _run_test)
+        success, stdout, stderr, violation = self._single_verification_pass(
+            current_kernel
+        )
+
+        if violation:
+            # Log initial failure so refinement LLM sees it in history
+            self._log_round(0, False, current_kernel, stdout, stderr)
+            return False, current_kernel, violation
+
+        if success:
+            self.logger.info("✅ Verification passed on first attempt")
+            return True, current_kernel, ""
+
+        # Refinement loop
+        for attempt in range(1, max_refine_attempts + 1):
+            error_output = stderr if stderr.strip() else stdout
+            self.logger.info(f"Refinement attempt {attempt}/{max_refine_attempts}...")
+
+            error_info = {
+                "stdout": stdout,
+                "stderr": stderr,
+                "error_type": (
+                    "compilation"
+                    if "CompilationError" in error_output
+                    or "SyntaxError" in error_output
+                    else "runtime"
+                ),
+            }
+
+            # Refine kernel
+            refined_kernel = self._refine_kernel(
+                current_kernel,
+                error_info,
+                problem_description,
+                format_test_code_for_llm(test_code),
+            )
+
+            # Write and test refined kernel
+            self._write_kernel(refined_kernel)
+            success, stdout, stderr, violation = self._single_verification_pass(
+                refined_kernel
+            )
+
+            if violation:
+                current_kernel = refined_kernel
+                continue
+
+            if success:
+                self.logger.info(
+                    f"✅ Verification passed after refinement (attempt {attempt})"
+                )
+                return True, refined_kernel, ""
+
+            current_kernel = refined_kernel
+
+        # All attempts exhausted
+        error_output = stderr if stderr.strip() else stdout
+        error_feedback = f"Verification failed after {max_refine_attempts} refinement attempts:\n{error_output[:2000]}"
+        self.logger.warning(f"❌ {error_feedback[:200]}...")
+        return False, current_kernel, error_feedback

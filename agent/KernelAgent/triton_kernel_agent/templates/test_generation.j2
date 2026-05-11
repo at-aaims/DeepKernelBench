@@ -1,0 +1,174 @@
+{#
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+#}
+
+Generate a comprehensive test for a Triton kernel based on the following problem description:
+
+{{ problem_description }}
+
+{% if provided_test_code -%}
+REFERENCE TEST CODE:
+The user has provided the following test code as reference. Use this to understand the expected behavior and requirements, but generate a new test that follows our standardized format:
+
+```python
+{{ provided_test_code }}
+```
+
+IMPORTANT: Do NOT copy the reference test directly. Instead, analyze it to understand:
+- What inputs and outputs are expected
+- What the kernel should compute
+- Any specific requirements or edge cases
+- Expected data types and shapes
+- If original problem description specifies FP32, convert to BF16 problems, never use FP32
+- Do NOT compute expected result in FP32 then cast back to BF16
+- Use BF16 for all if the problem description specifies FP32, including computation
+- The highest precision for the test is BF16, again DO NOT use FP32 for reference computation
+- Add a summary comment of the original problem description in the test code
+
+Then generate a new test following our format requirements below.
+{%- endif %}
+
+REQUIREMENTS:
+1. The test must be a complete, valid Python file
+2. Import the kernel function using: from kernel import kernel_function
+3. Call kernel_function as a NORMAL PYTHON FUNCTION (no grid configuration or kernel launch)
+4. The kernel.py file will handle all Triton-specific launch logic internally
+5. Create appropriate test data (e.g., torch tensors on {{ device_string }} device)
+6. Pass test data to kernel_function as regular function arguments
+7. Verify the results are correct
+8. Return True if test passes, False if it fails
+9. Exit with code 0 on success, 1 on failure
+10. Include error messages and debugging output
+11. Handle exceptions gracefully
+12. Do NOT use globals in the test (no "global" statements). Keep all tensors/parameters local and pass them explicitly to kernel_function.
+13. Assume the kernel implementation is self-contained inside kernel.py. Do NOT rely on or import any helper that is not defined in kernel.py. The test should surface a clear error if kernel_function references an undefined helper (NameError).
+14. Device checks: use result.device == input.device (or result.device.type == '{{ device_string }}'); never compare to 'cuda' or torch.device('cuda').
+
+ANTI-CHEATING CONSTRAINTS:
+- You MAY instantiate a PyTorch reference Model (nn.Module) in the test and use it to compute a reference output for comparison, but you MUST NOT pass that module instance into kernel_function (no model/module/net argument).
+- You MUST NOT pass any precomputed reference outputs (e.g., tensors named expected) into kernel_function. The kernel must compute its result purely from its own inputs.
+- Keep any reference outputs (expected tensors) local to test_kernel() and use them only for numerical comparisons. Do not store them as module-level globals or design the test such that kernel_function can trivially reuse them.
+
+REFERENCE SEMANTICS (WHEN AVAILABLE):
+- If the problem description includes a complete PyTorch reference Model or forward pass (as in KernelBench problems with a Model class and get_inputs()/get_init_inputs()), the test MUST:
+  - Instantiate that reference model (and use get_init_inputs()/get_inputs() when provided to construct inputs).
+  - Compute a reference output y_ref = Model(*inputs) on CUDA using the specified dtype.
+  - Call kernel_function on the same logical inputs (passing weights separately only if the kernel API requires it).
+  - Compare the kernel output numerically against y_ref with appropriate tolerances.
+- Do NOT design the test to verify only a sub-operation (e.g., just a softmax) when the original Model composes multiple operations; the test must validate the full forward mapping described for the given shapes.
+
+CRITICAL TEST DATA REQUIREMENTS:
+- If the problem description specifies exact shapes, dtypes, or tensor dimensions, use EXACTLY those specifications
+- Do NOT create multiple test cases with different shapes/dtypes if specific ones are mentioned
+- Use the exact shapes and dtypes mentioned in the problem description
+- Use non-zero random tensors (e.g., torch.randn/torch.rand) for inputs; never feed all-zero data unless the problem explicitly requires it, because zero inputs can hide missing computation.
+- Only create variations if the problem description is vague about the input specifications
+- If original problem description specifies FP32, convert to BF16 problems instead of FP32 problems
+- AVOID FP32 for inputs and outputs - use BF16 instead when users specify FP32 problems
+  - EXCEPTION: If the user cast example inputs explicitly to FP32, test with both FP32 and BF16
+- GroupNorm: compute mean/var in fp32 over (C/G)*H*W per (N,group), eps=1e-5; apply affine in fp32, cast at end; no extra bf16 quantization before pool/norm.
+
+
+DEBUGGING REQUIREMENTS:
+- When numerical results are incorrect, print detailed debugging information including:
+  - Expected vs actual output values (or samples if large)
+  - Input tensor shapes, dtypes, and sample values
+  - Any intermediate results that can help identify the issue
+  - Use torch.allclose() with appropriate tolerances for floating point comparisons
+- Include try/except blocks around numerical comparisons to catch and debug assertion errors
+
+NUMERICAL TOLERANCE REQUIREMENTS:
+- Use DEFAULT tolerances: rtol=1e-3, atol=1e-3 for torch.allclose()
+- Adjust tolerances ONLY if needed based on:
+  - Input data type (float16 and bfloat16 may need looser tolerances like rtol=1e-2, atol=2e-2)
+  - Input value ranges (very large or very small values may need adjusted tolerances)
+  - Specific algorithm characteristics (iterative algorithms may accumulate more error)
+  - If accumulation dimension is very large, use much larger tolerances, like 1e-1
+- Always document in comments why non-default tolerances are used
+
+IMPORTANT: Do NOT use any Triton kernel launch syntax. Treat kernel_function as a regular Python function.
+
+The test file structure should be:
+```python
+import torch
+# other imports as needed (but NOT triton - that's handled in kernel.py)
+
+# Comment for summary of original problem description
+def test_kernel():
+    """Test the kernel implementation."""
+    try:
+        from kernel import kernel_function
+        # Sanity check: kernel should be callable and self-contained
+        if not callable(kernel_function):
+            print("kernel_function is not callable")
+            return False
+
+        # Device setup
+        device = "{{ device_string }}"
+{% if device_string == "xpu" %}
+        if not hasattr(torch, 'xpu') or not torch.xpu.is_available():
+            raise RuntimeError("Intel XPU not available. Install PyTorch with Intel GPU support.")
+{% else %}
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA not available")
+{% endif %}
+
+        # Create test data using EXACT specifications from problem description
+        # If problem specifies shape/dtype, use those exact values
+        # input_tensor = torch.randn(EXACT_SHAPE, dtype=EXACT_DTYPE, device=device)
+
+        # Call kernel_function as a normal Python function
+        # result = kernel_function(input_tensor, other_args...)
+
+        # Example device check (avoid comparing to literal 'cuda')
+        # if isinstance(result, torch.Tensor) and result.device != input_tensor.device:
+        #     return False
+
+        # Verify results with detailed debugging on failure
+        # Use default tolerances: rtol=1e-3, atol=1e-3
+        # Adjust only if needed based on dtype/range (bf16: rtol=1e-2, atol=2e-2)(document why)
+        #
+        # Examples of when to adjust tolerances:
+        # - For float16: rtol=1e-2, atol=1e-2  # Lower precision
+        # - For very large values (>1e6): rtol=1e-2, atol=1e-1  # Larger absolute errors expected
+        # - For iterative algorithms: rtol=1e-2, atol=1e-2  # Accumulation of errors
+        #
+        # if not torch.allclose(result, expected, rtol=1e-3, atol=1e-3):
+        #     print(f"NUMERICAL MISMATCH:")
+        #     print(f"Input shape: {input_tensor.shape}, dtype: {input_tensor.dtype}")
+        #     print(f"Expected shape: {expected.shape}, dtype: {expected.dtype}")
+        #     print(f"Result shape: {result.shape}, dtype: {result.dtype}")
+        #     print(f"Expected (first few): {expected.flatten()[:10]}")
+        #     print(f"Got (first few): {result.flatten()[:10]}")
+        #     print(f"Max absolute difference: {torch.max(torch.abs(result - expected))}")
+        #     print(f"Relative error: {torch.max(torch.abs((result - expected) / (expected + 1e-8)))}")
+        #     return False
+
+        return True  # if successful
+    except Exception as e:
+        # Surface undefined helper issues from kernel.py clearly
+        if isinstance(e, NameError):
+            print(f"Test failed: NameError (likely undefined helper in kernel.py): {e}")
+        else:
+            print(f"Test failed: {e}")
+        return False
+
+if __name__ == "__main__":
+    import sys
+    success = test_kernel()
+    sys.exit(0 if success else 1)
+```
+
+Generate a complete test implementation:

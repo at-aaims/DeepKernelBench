@@ -1,0 +1,80 @@
+{#
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+#}
+
+{{ triton_guidelines }}
+
+TASK: Fix the following Triton kernel implementation based on the test results.
+
+TEST CODE:
+Analyze this test to understand what the kernel needs to implement:
+```python
+{{ test_code }}
+```
+
+CURRENT KERNEL IMPLEMENTATION:
+```python
+{{ kernel_code }}
+```
+
+TEST RESULTS:
+Error output: {{ error_info.stderr or 'None' }}
+Standard output: {{ error_info.stdout or 'None' }}
+
+{% if history_context -%}
+{{ history_context }}
+{%- endif %}
+
+FUSION PRIORITY:
+- Audit the existing implementation and the failing behavior to see where additional operations can be fused into the same pass.
+- Aim to return a single fused kernel that performs every dependent operation when feasible; do not regress to multiple kernels just because one passes the tests.
+- If fusion cannot be extended, leave a concise comment describing the technical reason so reviewers know you evaluated the option.
+
+RUNTIME RESTRICTIONS:
+- The Python wrapper may only perform argument validation, tensor allocation, and launch configuration.
+- All math (convs, activations, pooling, reductions, etc.) must reside inside Triton kernels.
+- Never import or instantiate `torch.nn` modules, call `torch.nn.functional` (including aliases like `F.*`), or rely on PyTorch helpers such as `torch.conv*`, `torch.relu`, `torch.max_pool*`, etc.
+- PyTorch usage is limited to allocation helpers, dtype/device checks, and assertions needed to launch the Triton kernel.
+
+CRITICAL REQUIREMENTS - NO CHEATING ALLOWED:
+1. Analyze the error message and fix the issue
+2. The implementation must be a complete, valid Python file
+3. The main function must be named 'kernel_function' that wraps the actual Triton kernel
+4. Follow all Triton programming guidelines
+5. Learn from previous attempts if any
+6. Focus on fixing the specific error while maintaining correctness
+7. Prefer solutions that preserve or extend operation fusion; never intentionally unfuse a pipeline unless you document why it is impossible to keep it fused
+8. Keep the wrapper free of PyTorch compute primitives—no torch.nn modules, torch.nn.functional calls, or other high-level PyTorch ops in the execution path
+
+**STRICTLY FORBIDDEN - DO NOT CHEAT:**
+- DO NOT call PyTorch functions (torch.add, torch.mul, torch.sum, etc.) inside the kernel computation
+- DO NOT use PyTorch operations to perform the actual computation and just return the result
+- DO NOT implement the logic using pure PyTorch and avoid writing Triton kernel code
+- The actual computation MUST be implemented using Triton operations (tl.load, tl.store, tl.sum, etc.)
+- The wrapper function can use PyTorch for tensor creation, memory allocation, and result formatting, but the core computation MUST happen in the Triton kernel
+- DO NOT import or instantiate torch.nn modules, call torch.nn.functional (including aliases like F.*), or use PyTorch activations/pooling helpers to satisfy the requirements
+{% if no_cusolver %}
+- DO NOT rely on cuSolver libraries (torch.linalg.svd, torch.linalg.eigh, etc.) to satisfy the requirements
+{% endif %}
+
+**WHAT IS REQUIRED:**
+- Write actual Triton kernel code using triton.language operations
+- Use tl.load() and tl.store() for memory access
+- Use tl.sum(), tl.max(), tl.min() etc. for reductions
+- Use proper Triton indexing with tl.program_id(), tl.arange(), etc.
+- Implement the algorithm step-by-step in Triton operations, not PyTorch shortcuts
+- The kernel should be decorated with @triton.jit, not the wrapper function
+
+Generate the complete fixed kernel implementation with actual Triton code:
