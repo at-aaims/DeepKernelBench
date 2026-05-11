@@ -1,0 +1,50 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from __future__ import annotations
+from pathlib import Path
+import stat
+
+
+class PathSafetyError(Exception):
+    pass
+
+
+def ensure_abs_regular_file(p: str | Path) -> Path:
+    path = Path(p)
+    if not path.is_absolute():
+        raise PathSafetyError(f"problem path must be absolute: {path}")
+    try:
+        # Resolve symlinks to get the real path
+        resolved_path = path.resolve()
+        st = resolved_path.stat()
+    except FileNotFoundError:
+        raise PathSafetyError(f"problem path does not exist: {path}")
+    if not stat.S_ISREG(st.st_mode):
+        raise PathSafetyError(f"problem path must be a regular file: {path}")
+    return resolved_path
+
+
+def make_run_dirs(base: Path, run_id: str) -> dict[str, Path]:
+    run_dir = base / run_id
+    orch = run_dir / "orchestrator"
+    workers = run_dir / "workers"
+    shared = run_dir / "shared" / "digests"
+    for d in (run_dir, orch, workers, shared):
+        d.mkdir(parents=True, exist_ok=False)
+    return {
+        "run_dir": run_dir,
+        "orchestrator": orch,
+        "workers": workers,
+        "digests": shared,
+    }
