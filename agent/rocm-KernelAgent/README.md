@@ -125,6 +125,7 @@ More knobs live in `triton_kernel_agent/agent.py` and `Fuser/config.py`.
   ```bash
   python -m Fuser.auto_agent \
     --problem /abs/path/to/KernelBench/level1/19_ReLU.py \
+    --target-platform rocm  # target ROCm backend
     --no-router-cache \     # avoid caching or using cached results
     --verify                # ensure final composition test runs
   ```
@@ -144,6 +145,18 @@ More knobs live in `triton_kernel_agent/agent.py` and `Fuser/config.py`.
   ```bash
   python -m Fuser.pipeline \
     --problem /abs/path/to/problem.py \
+    --extract-model gpt-5 \
+    --dispatch-model o4-mini \
+    --dispatch-jobs auto \
+    --compose-model o4-mini \
+    --workers 4 \
+    --max-iters 5 \
+    --verify
+
+  # For AMD GPU
+  python -m Fuser.pipeline \
+    --problem /abs/path/to/problem.py \
+    --target-platform rocm \
     --extract-model gpt-5 \
     --dispatch-model o4-mini \
     --dispatch-jobs auto \
