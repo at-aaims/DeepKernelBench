@@ -9,8 +9,11 @@
 
 ## AMD GPUs
 1. Download and install the ROCm Toolkit for your corresponding platform. For system requirements and installation instructions of ROCm toolkit, please refer to the [Linux Installation Guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/)
-2. Create a new virtual env and install build dependencies
+2. Create a Python 3.12 virtual environment. The pinned ROCm vLLM wheel is currently published for CPython 3.12.
+3. Install the benchmark dependencies:
 ```
+   python3.12 -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements-rocm.txt
 ```
 
@@ -47,6 +50,7 @@ python driver.py --help
 
 ## Run benchmarks
 The README files in sub-directories provide the commands to run the benchmarks.
+Representative MI300A measurements and the validated software environment are recorded in [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 
 ## Support matrix
 | Benchmark name | Intel B580 (16GB) | AMD MI250X (64GB) | AMD MI300A (128GB) | NVIDIA H100 (80GB) |
@@ -55,7 +59,7 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | attn2  | ❌ | ✅ |✅ | ✅ |
 | attn3  | ❌ | ❌ | ❌ | ✅ |
 | attn4  | ❌ | ❌ | ❌ | ✅ |
-| attn_triton | ✅ | ✅ |✅ | ✅ |
+| attn_triton | ✅ | ✅ | limited[^mi300a-triton-attn] | ✅ |
 | sdpa | limited| ✅ |✅ | ✅ |
 | flex | ✅ | ✅ |✅ | ✅ |
 | fp8_gemm | ✅ |❌ |✅ | ✅ |
@@ -78,6 +82,8 @@ The README files in sub-directories provide the commands to run the benchmarks.
 | mixtral-moe | ❌ | ✅ | ✅ |✅ |
 | unet | ✅ |✅ | ✅ |✅ |
 | wan2 | ✅ |✅ | ✅ |✅ |
+
+[^mi300a-triton-attn]: The measured MI300A Triton attention shape ran but exceeded the BF16 correctness tolerance. See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 
 ## Reference
 ```
