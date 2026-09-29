@@ -11,6 +11,8 @@ import time
 import argparse
 import pandas as pd
 
+from collective_alloc import allocate_or_skip, report_skip
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--multiplier", type=int, default=2)
 
@@ -52,8 +54,11 @@ for nMB in [0.10,0.12,0.15,0.20,0.32,0.40,0.50,0.64,0.80,1.00,1.25,1.50,2.00,3.1
     nlocal  = int((nglobal + 1)/world_size)
     nglobal = nlocal*world_size
 
-    Input  = torch.rand(nglobal, device='cuda')
-    Output = torch.rand(nlocal,  device='cuda')
+    buffers = allocate_or_skip(nglobal, nlocal)
+    if buffers is None:
+        report_skip(nMB, rank)
+        continue
+    Input, Output = buffers
     torch.cuda.synchronize()
 
     # launch warmup calls
