@@ -49,12 +49,15 @@ def run_benchmark(m, k, n, a_type='float8_e4m3',
     assert k > 0
     assert n > 0
 
-    if torch.version.hip:
+    # FP8 encoding is per-architecture, not per-vendor, so the OCP standard
+    # encodings are the default and fnuz is the exception. fnuz exists only on
+    # CDNA3 (gfx94x); gfx950 (CDNA4, MI350/MI355X) does not have it, and
+    # architectures added after it are not expected to either.
+    e4m3_type = torch.float8_e4m3fn
+    e5m2_type = torch.float8_e5m2
+    if torch.version.hip and "gfx94" in torch.cuda.get_device_properties(device).gcnArchName:
         e4m3_type = torch.float8_e4m3fnuz
         e5m2_type = torch.float8_e5m2fnuz
-    else:
-        e4m3_type = torch.float8_e4m3fn
-        e5m2_type = torch.float8_e5m2
 
     torch_dtypes = {
         'float8_e4m3': e4m3_type,
