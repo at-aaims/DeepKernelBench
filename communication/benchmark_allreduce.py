@@ -11,6 +11,8 @@ import time
 import argparse
 import pandas as pd
 
+from collective_alloc import allocate_or_skip, report_skip
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--multiplier", type=int, default=2)
 parser.add_argument("-r", "--reduce_op", type=int, default=0)
@@ -72,7 +74,11 @@ for nMB in [0.10,0.12,0.15,0.20,0.32,0.40,0.50,0.64,0.80,1.00,1.25,1.50,2.00,3.1
     # silently clamps to the allocation and the larger sizes are never
     # transferred while the bandwidth below still divides by the requested
     # npts.
-    Tensor = torch.rand(npts, device='cuda')
+    buffers = allocate_or_skip(npts)
+    if buffers is None:
+        report_skip(nMB, rank)
+        continue
+    (Tensor,) = buffers
     torch.cuda.synchronize()
 
     # launch warmup calls
@@ -97,6 +103,12 @@ for nMB in [0.10,0.12,0.15,0.20,0.32,0.40,0.50,0.64,0.80,1.00,1.25,1.50,2.00,3.1
 
     torch.cuda.synchronize()
     tend = time.perf_counter()
+
+    # Release before the next, larger allocation, as the sibling benchmarks
+    # do. Holding this buffer while the next one is requested doubles the peak
+    # and makes the sweep give up a size or two earlier than it needs to.
+    del Tensor
+    torch.cuda.synchronize()
 
     elapsed = tend - tbeg
     tavg = elapsed / maxiter
