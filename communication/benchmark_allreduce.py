@@ -44,12 +44,6 @@ if rank == 0:
 
 torch.manual_seed(1235911);
 
-nMB = 10000.0
-npts = int(nMB*1.0e6/4.0)
-
-Tensor = torch.rand(npts, device='cuda')
-torch.cuda.synchronize()
-
 if rank == 0:
     results = []
     print(" size(MB)   tavg(usec)    tmin(usec)    tmax(usec)  avgbw(GB/sec)  maxbw(GB/sec)  minbw(GB/sec)", file=sys.stderr)
@@ -71,6 +65,15 @@ for nMB in [0.10,0.12,0.15,0.20,0.32,0.40,0.50,0.64,0.80,1.00,1.25,1.50,2.00,3.1
     nm1 = int(npts - 1)
 
     args
+
+    # Allocate per size, as benchmark_allgather.py and
+    # benchmark_reduce_scatter.py already do. A single buffer hoisted out of
+    # this loop has to be sized for the largest sweep point, or Tensor[0:nm1]
+    # silently clamps to the allocation and the larger sizes are never
+    # transferred while the bandwidth below still divides by the requested
+    # npts.
+    Tensor = torch.rand(npts, device='cuda')
+    torch.cuda.synchronize()
 
     # launch warmup calls
     for i in range(2):
